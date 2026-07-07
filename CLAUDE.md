@@ -30,15 +30,21 @@ Press `r` in a running session for hot-reload, `R` for hot-restart.
 
 ## Code layout
 
-- `lib/main.dart` — the app UI and drawing logic:
-  - `ColoringApp` — root `MaterialApp`
-  - `ColoringPage` — stateful screen: canvas + toolbar (palette, eraser, brush slider,
-    undo/redo, clear, save, and prev/next picture navigation)
-  - `Stroke` — one drag stroke: `color`, `width`, `erase`, `points`
-  - `ColoringTemplate` — a named picture with an optional outline drawer (null = blank)
-  - `_Artboard` — per-picture `strokes` + `redo` lists (one per template)
-  - `_CanvasPainter` — `CustomPainter` that draws background, outline, then strokes
-  - top-level `_drawFish` / `_drawFlower` / `_drawHouse` / `_drawStar` — vector outlines
+The app is split into small, focused files (was one big `main.dart`):
+
+- `lib/main.dart` — entry point only: `main()` + `ColoringApp` (root `MaterialApp`).
+- `lib/coloring_page.dart` — `ColoringPage` stateful screen: the canvas + toolbar
+  (palette, custom-color picker, eraser, brush slider + preview, undo/redo, clear,
+  save, prev/next navigation) and all pointer/gesture + action logic.
+- `lib/models.dart` — plain data: `Stroke` (color, width, erase, normalized `points`),
+  `ColoringTemplate` (name + optional `OutlineDrawer`), `Artboard` (per-picture
+  `strokes` + `redo`).
+- `lib/templates.dart` — the `kTemplates` list and vector outline drawers
+  (`drawFish` / `drawFlower` / `drawHouse` / `drawStar`) + helpers.
+- `lib/canvas_painter.dart` — `CanvasPainter` (`CustomPainter`): background → outline →
+  strokes in a `saveLayer` (real `BlendMode.clear` eraser).
+- `lib/color_picker.dart` — `showColorPickerDialog`: a package-free HSV color picker
+  (hue/saturation/brightness sliders + live preview).
 - `lib/save_image.dart` + `save_image_stub.dart` + `save_image_web.dart` — platform-
   conditional PNG save (`savePng`). Web triggers a browser download via `dart:html`;
   other platforms return a "not wired up" message. No packages.

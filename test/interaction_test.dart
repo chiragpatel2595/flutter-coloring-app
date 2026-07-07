@@ -143,4 +143,33 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(undoButton(tester).onPressed, isNotNull);
   });
+
+  testWidgets('custom color picker opens and adds a swatch', (tester) async {
+    await tester.pumpWidget(const ColoringApp());
+
+    // Bare circular swatches are InkResponse; count before opening the picker.
+    final swatchesBefore = tester.widgetList(find.byType(InkResponse)).length;
+
+    // The add-color button carries the plus icon.
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+    expect(find.text('Pick a color'), findsOneWidget);
+
+    // Nudge the hue slider so a distinct custom color is chosen.
+    await tester.drag(
+      find.descendant(
+          of: find.byType(AlertDialog), matching: find.byType(Slider)).first,
+      const Offset(60, 0),
+    );
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Use color'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Pick a color'), findsNothing); // dialog closed
+    // A new custom swatch was added to the palette.
+    final swatchesAfter = tester.widgetList(find.byType(InkResponse)).length;
+    expect(swatchesAfter, greaterThan(swatchesBefore));
+  });
 }
