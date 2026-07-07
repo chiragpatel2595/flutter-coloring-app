@@ -45,6 +45,8 @@ The app is split into small, focused files (was one big `main.dart`):
   strokes in a `saveLayer` (real `BlendMode.clear` eraser).
 - `lib/color_picker.dart` — `showColorPickerDialog`: a package-free HSV color picker
   (hue/saturation/brightness sliders + live preview).
+- `lib/flood_fill.dart` — pure `floodFill()` over a raw RGBA buffer (no engine), so the
+  paint-bucket algorithm is unit-testable on its own.
 - `lib/save_image.dart` + `save_image_stub.dart` + `save_image_web.dart` — platform-
   conditional PNG save (`savePng`). Web triggers a browser download via `dart:html`;
   other platforms return a "not wired up" message. No packages.
@@ -75,6 +77,11 @@ they punch back to the outline/background (a *real* eraser, not white paint).
   stable across repaints. `CanvasPainter._paintFor` maps each type to its `Paint`.
 - **Colors** — 8 preset swatches plus a custom HSV picker (`color_picker.dart`); picked
   colors are remembered as extra swatches.
+- **Paint bucket** — a picture is an ordered list of `Layer`s (`Stroke` | `Fill`), so
+  fills and strokes share one z-order and one undo stack. Tapping with the bucket
+  rasterizes the canvas, runs the pure `floodFill()`, bakes the result to a `Fill`
+  (`ui.Image`), and adds it as a layer. `Fill` images are disposed when discarded
+  (clear, or a redo pile dropped by a new action).
 - **Undo/redo** — per picture: undo moves the last stroke to `redo`, redo moves it back;
   a new stroke clears `redo`. Keyboard shortcuts: Ctrl/Cmd+Z undo, add Shift (or Ctrl+Y)
   to redo. **Clear** empties both and can't be undone, so it asks for confirmation first.

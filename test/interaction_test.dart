@@ -159,6 +159,14 @@ void main() {
     expect(undoButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets('paint bucket tool can be selected', (tester) async {
+    await tester.pumpWidget(const ColoringApp());
+    await tester.tap(find.byIcon(Icons.format_color_fill));
+    await tester.pump();
+    // Selecting the bucket clears the brush-segment selection and doesn't throw.
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('custom color picker opens and adds a swatch', (tester) async {
     await tester.pumpWidget(const ColoringApp());
 

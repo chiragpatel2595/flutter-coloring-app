@@ -4,15 +4,16 @@ import 'package:flutter/material.dart';
 
 import 'models.dart';
 
-/// Paints a picture: white background → template outline → the user's strokes.
+/// Paints a picture: white background → template outline → the user's layers
+/// (strokes and paint-bucket fills, in draw order).
 ///
-/// The strokes go into their own `saveLayer` so the eraser can use
+/// The layers go into their own `saveLayer` so the eraser can use
 /// `BlendMode.clear` to punch real holes back to the outline/background,
 /// rather than the old trick of painting white over the top.
 class CanvasPainter extends CustomPainter {
-  final List<Stroke> strokes;
+  final List<Layer> layers;
   final ColoringTemplate template;
-  CanvasPainter(this.strokes, this.template);
+  CanvasPainter(this.layers, this.template);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -26,29 +27,45 @@ class CanvasPainter extends CustomPainter {
     template.drawOutline?.call(canvas, size);
 
     canvas.saveLayer(bounds, Paint());
-    for (final s in strokes) {
-      // Points are stored normalized (0..1); scale them back to pixels for
-      // the current canvas size.
-      final pts = [
-        for (final p in s.points) Offset(p.dx * size.width, p.dy * size.height)
-      ];
-      final paint = _paintFor(s);
-
-      // Spray is a cloud of baked dots; every other brush is a line/dot.
-      if (!s.erase && s.type == BrushType.spray) {
-        canvas.drawPoints(ui.PointMode.points, pts, paint);
-      } else if (pts.length == 1) {
-        // a single tap -> draw a dot
-        canvas.drawPoints(ui.PointMode.points, pts, paint);
-      } else {
-        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-        for (final p in pts.skip(1)) {
-          path.lineTo(p.dx, p.dy);
-        }
-        canvas.drawPath(path, paint);
+    for (final layer in layers) {
+      switch (layer) {
+        case Stroke s:
+          _drawStroke(canvas, size, s);
+        case Fill f:
+          // Baked pixels — stretch the fill image to the current canvas size.
+          canvas.drawImageRect(
+            f.image,
+            Rect.fromLTWH(
+                0, 0, f.image.width.toDouble(), f.image.height.toDouble()),
+            bounds,
+            Paint(),
+          );
       }
     }
     canvas.restore();
+  }
+
+  void _drawStroke(Canvas canvas, Size size, Stroke s) {
+    // Points are stored normalized (0..1); scale them back to pixels for the
+    // current canvas size.
+    final pts = [
+      for (final p in s.points) Offset(p.dx * size.width, p.dy * size.height)
+    ];
+    final paint = _paintFor(s);
+
+    // Spray is a cloud of baked dots; every other brush is a line/dot.
+    if (!s.erase && s.type == BrushType.spray) {
+      canvas.drawPoints(ui.PointMode.points, pts, paint);
+    } else if (pts.length == 1) {
+      // a single tap -> draw a dot
+      canvas.drawPoints(ui.PointMode.points, pts, paint);
+    } else {
+      final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+      for (final p in pts.skip(1)) {
+        path.lineTo(p.dx, p.dy);
+      }
+      canvas.drawPath(path, paint);
+    }
   }
 
   /// Builds the [Paint] for a stroke based on its brush type. The eraser

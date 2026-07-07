@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -7,6 +9,7 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'canvas_painter.dart';
 import 'color_picker.dart';
+import 'flood_fill.dart';
 import 'models.dart';
 import 'save_image.dart';
 import 'templates.dart';
@@ -34,6 +37,7 @@ class _ColoringPageState extends State<ColoringPage> {
   Color _color = Colors.red;
   double _brush = 12;
   bool _erasing = false;
+  bool _filling = false; // paint-bucket tool active
   BrushType _brushType = BrushType.pen;
 
   // For the spray brush's random scatter (see _pointsAt).
@@ -81,7 +85,7 @@ class _ColoringPageState extends State<ColoringPage> {
   }
 
   void _startStroke(int pointer, Offset local, Size size) => setState(() {
-        _board.redo.clear(); // a fresh stroke invalidates the redo history
+        _clearRedo(); // a fresh stroke invalidates the redo history
         final stroke = Stroke(
           // The eraser ignores brush type; store pen so it paints a plain line.
           type: _erasing ? BrushType.pen : _brushType,
@@ -91,7 +95,7 @@ class _ColoringPageState extends State<ColoringPage> {
           points: _pointsAt(local, size),
         );
         _active[pointer] = stroke;
-        _board.strokes.add(stroke);
+        _board.layers.add(stroke);
       });
 
   void _extendStroke(int pointer, Offset local, Size size) {
@@ -102,21 +106,77 @@ class _ColoringPageState extends State<ColoringPage> {
 
   void _endStroke(int pointer) => _active.remove(pointer);
 
+  // ---- Paint bucket (flood fill) ----
+
+  /// Fills the contiguous region around [local] with the current color.
+  ///
+  /// It rasterizes the current canvas, runs a scan-free flood fill over the
+  /// pixels (matching colors near the tapped pixel, stopping at the outline
+  /// and other colors), bakes the result to a transparent [ui.Image], and adds
+  /// it as a [Fill] layer. Pixel work on the main thread — fine for a tap on a
+  /// phone-sized canvas; see CLAUDE.md if it ever needs an isolate.
+  Future<void> _floodFill(Offset local, Size size) async {
+    final boundary =
+        _canvasKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) return;
+
+    final image = await boundary.toImage(pixelRatio: 1);
+    final w = image.width, h = image.height;
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    image.dispose();
+    if (byteData == null) return;
+    final src = byteData.buffer.asUint8List();
+
+    final sx = local.dx.round().clamp(0, w - 1);
+    final sy = local.dy.round().clamp(0, h - 1);
+
+    // Heavy pixel work lives in the pure, unit-tested floodFill(). It returns
+    // null when the tapped region is already this color.
+    final out = floodFill(src, w, h, sx, sy, _color.toARGB32(), 48);
+    if (out == null) return;
+
+    final fillImage = await _decodePixels(out, w, h);
+    if (!mounted) {
+      fillImage.dispose();
+      return;
+    }
+    setState(() {
+      _clearRedo();
+      _board.layers.add(Fill(fillImage));
+    });
+  }
+
+  Future<ui.Image> _decodePixels(Uint8List rgba, int w, int h) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+        rgba, w, h, ui.PixelFormat.rgba8888, completer.complete);
+    return completer.future;
+  }
+
   // ---- Toolbar actions ----
 
   void _undo() => setState(() {
-        if (_board.strokes.isNotEmpty) {
-          _board.redo.add(_board.strokes.removeLast());
+        if (_board.layers.isNotEmpty) {
+          _board.redo.add(_board.layers.removeLast());
         }
       });
 
   void _redo() => setState(() {
         if (_board.redo.isNotEmpty) {
-          _board.strokes.add(_board.redo.removeLast());
+          _board.layers.add(_board.redo.removeLast());
         }
       });
 
-  /// Clear wipes both the strokes and the redo history, so it can't be undone.
+  /// Empties the redo history, disposing any fill images in it (they can't be
+  /// reached again, so free their native memory).
+  void _clearRedo() {
+    for (final layer in _board.redo) {
+      if (layer is Fill) layer.dispose();
+    }
+    _board.redo.clear();
+  }
+
+  /// Clear wipes both the layers and the redo history, so it can't be undone.
   /// Because it's destructive, ask first.
   Future<void> _clear() async {
     final confirmed = await showDialog<bool>(
@@ -139,7 +199,10 @@ class _ColoringPageState extends State<ColoringPage> {
     );
     if (confirmed != true || !mounted) return;
     setState(() {
-      _board.strokes.clear();
+      for (final layer in [..._board.layers, ..._board.redo]) {
+        if (layer is Fill) layer.dispose();
+      }
+      _board.layers.clear();
       _board.redo.clear();
     });
   }
@@ -155,6 +218,7 @@ class _ColoringPageState extends State<ColoringPage> {
     if (picked == null || !mounted) return;
     setState(() {
       _erasing = false;
+      _filling = false;
       _color = picked;
       if (!_customColors.contains(picked) &&
           !_palette.any((e) => e.$2 == picked)) {
@@ -194,7 +258,7 @@ class _ColoringPageState extends State<ColoringPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canUndo = _board.strokes.isNotEmpty;
+    final canUndo = _board.layers.isNotEmpty;
     final canRedo = _board.redo.isNotEmpty;
 
     // Desktop/web keyboard shortcuts. Ctrl+Z / Cmd+Z undo, add Shift (or
@@ -265,15 +329,22 @@ class _ColoringPageState extends State<ColoringPage> {
                         // can track each finger independently for multi-touch.
                         child: Listener(
                           behavior: HitTestBehavior.opaque,
-                          onPointerDown: (e) =>
-                              _startStroke(e.pointer, e.localPosition, size),
+                          onPointerDown: (e) {
+                            // The bucket is a single-tap tool; everything else
+                            // starts a stroke.
+                            if (_filling) {
+                              _floodFill(e.localPosition, size);
+                            } else {
+                              _startStroke(e.pointer, e.localPosition, size);
+                            }
+                          },
                           onPointerMove: (e) =>
                               _extendStroke(e.pointer, e.localPosition, size),
                           onPointerUp: (e) => _endStroke(e.pointer),
                           onPointerCancel: (e) => _endStroke(e.pointer),
                           child: CustomPaint(
-                            painter: CanvasPainter(
-                                _board.strokes, kTemplates[_page]),
+                            painter:
+                                CanvasPainter(_board.layers, kTemplates[_page]),
                             size: Size.infinite,
                           ),
                         ),
@@ -331,6 +402,7 @@ class _ColoringPageState extends State<ColoringPage> {
                   for (final c in _customColors)
                     _swatch('Custom color', c),
                   _addColorButton(),
+                  _bucketButton(),
                   _eraserButton(),
                 ],
               ),
@@ -388,12 +460,14 @@ class _ColoringPageState extends State<ColoringPage> {
                 icon: Icon(Icons.blur_on),
                 tooltip: 'Spray'),
           ],
-          selected: _erasing ? const <BrushType>{} : {_brushType},
+          selected:
+              (_erasing || _filling) ? const <BrushType>{} : {_brushType},
           onSelectionChanged: (selection) {
             if (selection.isEmpty) return;
             setState(() {
               _brushType = selection.first;
               _erasing = false;
+              _filling = false;
             });
           },
         ),
@@ -416,6 +490,7 @@ class _ColoringPageState extends State<ColoringPage> {
           onTap: () => setState(() {
             _color = c;
             _erasing = false;
+            _filling = false;
           }),
           child: Container(
             width: 36,
@@ -467,6 +542,42 @@ class _ColoringPageState extends State<ColoringPage> {
     );
   }
 
+  /// Paint-bucket toggle. The fill color is the current [_color].
+  Widget _bucketButton() {
+    return Tooltip(
+      message: 'Fill (paint bucket)',
+      child: Semantics(
+        button: true,
+        selected: _filling,
+        label: 'Paint bucket fill',
+        child: InkResponse(
+          onTap: () => setState(() {
+            _filling = true;
+            _erasing = false;
+          }),
+          child: Container(
+            width: 36,
+            height: 36,
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            decoration: BoxDecoration(
+              color: _color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _filling ? Colors.black : Colors.black26,
+                width: _filling ? 3 : 1,
+              ),
+            ),
+            child: Icon(Icons.format_color_fill,
+                size: 18,
+                color: _color.computeLuminance() > 0.5
+                    ? Colors.black
+                    : Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _eraserButton() {
     return Tooltip(
       message: 'Eraser',
@@ -475,7 +586,10 @@ class _ColoringPageState extends State<ColoringPage> {
         selected: _erasing,
         label: 'Eraser',
         child: InkResponse(
-          onTap: () => setState(() => _erasing = true),
+          onTap: () => setState(() {
+            _erasing = true;
+            _filling = false;
+          }),
           child: Container(
             width: 36,
             height: 36,

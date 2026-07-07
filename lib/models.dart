@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 /// The kind of brush a [Stroke] was drawn with. Each renders differently in
@@ -7,6 +9,12 @@ import 'package:flutter/material.dart';
 /// - [highlighter]: very transparent, wide, flat line.
 /// - [spray]: an airbrush — scattered dots that build up density.
 enum BrushType { pen, marker, highlighter, spray }
+
+/// One thing painted onto a picture, in draw order. A picture's artwork is a
+/// list of these (see [Artboard]); the two kinds are a freehand [Stroke] and a
+/// paint-bucket [Fill]. Being a `sealed` class lets the painter switch over the
+/// kinds exhaustively.
+sealed class Layer {}
 
 /// One continuous finger/mouse stroke: a brush type, a color, a width, whether
 /// it erases, and the points it covers.
@@ -18,7 +26,7 @@ enum BrushType { pen, marker, highlighter, spray }
 ///
 /// For [BrushType.spray] the points are pre-scattered at draw time (baked), so
 /// the airbrush stays stable across repaints instead of shimmering.
-class Stroke {
+class Stroke extends Layer {
   final BrushType type;
   final Color color;
   final double width;
@@ -33,6 +41,18 @@ class Stroke {
   });
 }
 
+/// A paint-bucket fill, baked to a [ui.Image] (the filled region on a
+/// transparent background). It's pixel data, so unlike a [Stroke] it can't be
+/// resolution-independent — the painter stretches it to the current canvas
+/// size. Call [dispose] when the fill is permanently discarded to free the
+/// image's native memory.
+class Fill extends Layer {
+  final ui.Image image;
+  Fill(this.image);
+
+  void dispose() => image.dispose();
+}
+
 /// The signature for a function that strokes a template's outline onto the
 /// canvas. A null drawer (see [ColoringTemplate]) means a blank page.
 typedef OutlineDrawer = void Function(Canvas canvas, Size size);
@@ -45,9 +65,9 @@ class ColoringTemplate {
   const ColoringTemplate(this.name, this.drawOutline);
 }
 
-/// The strokes (and redo history) for a single picture. Each template gets
-/// its own board so switching pictures keeps their artwork.
+/// The layers (and redo history) for a single picture. Each template gets its
+/// own board so switching pictures keeps their artwork.
 class Artboard {
-  final List<Stroke> strokes = [];
-  final List<Stroke> redo = [];
+  final List<Layer> layers = [];
+  final List<Layer> redo = [];
 }
