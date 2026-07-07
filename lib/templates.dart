@@ -18,6 +18,10 @@ const List<ColoringTemplate> kTemplates = [
   ColoringTemplate('Flower', drawFlower),
   ColoringTemplate('House', drawHouse),
   ColoringTemplate('Star', drawStar),
+  ColoringTemplate('Heart', drawHeart),
+  ColoringTemplate('Sun', drawSun),
+  ColoringTemplate('Tree', drawTree),
+  ColoringTemplate('Car', drawCar),
 ];
 
 Paint _outlinePaint() => Paint()
@@ -127,4 +131,75 @@ void drawStar(Canvas canvas, Size size) {
   }
   path.close();
   canvas.drawPath(path, p);
+}
+
+void drawHeart(Canvas canvas, Size size) {
+  final p = _outlinePaint();
+  final b = _box(size);
+  final cx = b.center.dx;
+  final topY = b.top + b.height * 0.32;
+  final bottomY = b.bottom - b.height * 0.08;
+  final path = Path()
+    ..moveTo(cx, bottomY)
+    // left lobe
+    ..cubicTo(b.left, b.center.dy, b.left + b.width * 0.05, b.top, cx, topY)
+    // right lobe
+    ..cubicTo(
+        b.right - b.width * 0.05, b.top, b.right, b.center.dy, cx, bottomY)
+    ..close();
+  canvas.drawPath(path, p);
+}
+
+void drawSun(Canvas canvas, Size size) {
+  final p = _outlinePaint();
+  final b = _box(size);
+  final c = b.center;
+  final r = b.width * 0.22;
+  canvas.drawCircle(c, r, p);
+  // rays
+  for (var i = 0; i < 12; i++) {
+    final a = i * math.pi / 6;
+    final dir = Offset(math.cos(a), math.sin(a));
+    canvas.drawLine(c + dir * (r * 1.3), c + dir * (r * 1.8), p);
+  }
+}
+
+void drawTree(Canvas canvas, Size size) {
+  final p = _outlinePaint();
+  final b = _box(size);
+  final cx = b.center.dx;
+  // trunk
+  final trunkW = b.width * 0.14;
+  canvas.drawRect(
+    Rect.fromLTWH(cx - trunkW / 2, b.center.dy, trunkW, b.bottom - b.center.dy),
+    p,
+  );
+  // foliage
+  canvas.drawCircle(Offset(cx, b.top + b.height * 0.32), b.width * 0.28, p);
+}
+
+void drawCar(Canvas canvas, Size size) {
+  final p = _outlinePaint();
+  final b = _box(size);
+  final bodyTop = b.center.dy;
+  final bodyBottom = b.center.dy + b.height * 0.2;
+  // body
+  canvas.drawRRect(
+    RRect.fromRectAndRadius(
+      Rect.fromLTRB(b.left, bodyTop, b.right, bodyBottom),
+      const Radius.circular(10),
+    ),
+    p,
+  );
+  // roof / cabin
+  final roof = Path()
+    ..moveTo(b.left + b.width * 0.25, bodyTop)
+    ..lineTo(b.left + b.width * 0.36, b.top + b.height * 0.28)
+    ..lineTo(b.left + b.width * 0.64, b.top + b.height * 0.28)
+    ..lineTo(b.left + b.width * 0.75, bodyTop);
+  canvas.drawPath(roof, p);
+  // wheels
+  final wheelR = b.width * 0.09;
+  canvas.drawCircle(Offset(b.left + b.width * 0.28, bodyBottom), wheelR, p);
+  canvas.drawCircle(Offset(b.left + b.width * 0.72, bodyBottom), wheelR, p);
 }

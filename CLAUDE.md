@@ -40,7 +40,7 @@ The app is split into small, focused files (was one big `main.dart`):
   `ColoringTemplate` (name + optional `OutlineDrawer`), `Artboard` (per-picture
   `strokes` + `redo`).
 - `lib/templates.dart` — the `kTemplates` list and vector outline drawers
-  (`drawFish` / `drawFlower` / `drawHouse` / `drawStar`) + helpers.
+  (fish / flower / house / star / heart / sun / tree / car) + helpers.
 - `lib/canvas_painter.dart` — `CanvasPainter` (`CustomPainter`): background → outline →
   strokes in a `saveLayer` (real `BlendMode.clear` eraser).
 - `lib/color_picker.dart` — `showColorPickerDialog`: a package-free HSV color picker
@@ -103,15 +103,16 @@ they punch back to the outline/background (a *real* eraser, not white paint).
 
 ## Ideas / next steps
 
-Done: undo/redo (+ keyboard shortcuts), vector outline backgrounds, multiple pictures
-with navigation, web PNG save (real `BlendMode.clear` eraser), multi-touch drawing,
+Done: undo/redo (+ keyboard shortcuts), vector outline backgrounds (9 pictures) with
+navigation, web PNG save (real `BlendMode.clear` eraser), multi-touch drawing,
 resize-safe normalized strokes, clear-confirmation, accessible swatches, brush preview,
-and a pixel-level repaint test. Possible follow-ups:
+a custom HSV color picker, brush types (pen/marker/highlighter/spray), a paint-bucket
+flood fill (layer model + pure algorithm), and a modular file layout with a pixel-level
+repaint test. Possible follow-ups:
 
 - Real device-gallery save on iOS/Android (would add `path_provider` + a gallery/share
   package and per-platform permission config — currently save is web-only)
 - Bundle real PNG line-art as an alternative to the code-drawn vector templates
-- Fill-a-region ("paint bucket") tool
-- Custom color picker beyond the fixed palette
-- Cache finished strokes into a `ui.Picture` so `shouldRepaint` doesn't redraw every
-  stroke each frame as drawings grow large
+- Run `floodFill` in an isolate if fills on large canvases ever feel janky
+- Cache finished layers into a `ui.Picture` so `shouldRepaint` doesn't redraw every
+  layer each frame as drawings grow large
