@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'save_image.dart';
 
@@ -24,6 +25,11 @@ class ColoringApp extends StatelessWidget {
 
 /// One continuous finger/mouse stroke: a color, a width, whether it erases,
 /// and the points it covers.
+///
+/// Points are stored *normalized* to the canvas size — each is a fraction in
+/// 0..1 of the width/height at draw time. That way, when the window resizes
+/// the strokes scale with the canvas (and stay put over the outline) instead
+/// of being pinned to stale pixel coordinates.
 class Stroke {
   final Color color;
   final double width;
@@ -78,6 +84,11 @@ class _ColoringPageState extends State<ColoringPage> {
 
   final GlobalKey _canvasKey = GlobalKey();
 
+  // Strokes being drawn right now, keyed by pointer id. Tracking each pointer
+  // separately is what makes multi-touch work: two fingers get two strokes,
+  // instead of the second finger hijacking the first finger's line.
+  final Map<int, Stroke> _active = {};
+
   int _page = 0;
   Color _color = Colors.red;
   double _brush = 12;
@@ -85,16 +96,46 @@ class _ColoringPageState extends State<ColoringPage> {
 
   _Artboard get _board => _boards[_page];
 
-  static const _palette = [
-    Colors.red,
-    Colors.orange,
-    Colors.yellow,
-    Colors.green,
-    Colors.blue,
-    Colors.purple,
-    Colors.brown,
-    Colors.black,
+  // (name, color) pairs — the name is used for tooltips and screen readers.
+  static const _palette = <(String, Color)>[
+    ('Red', Colors.red),
+    ('Orange', Colors.orange),
+    ('Yellow', Colors.yellow),
+    ('Green', Colors.green),
+    ('Blue', Colors.blue),
+    ('Purple', Colors.purple),
+    ('Brown', Colors.brown),
+    ('Black', Colors.black),
   ];
+
+  // ---- Pointer handling (one stroke per active pointer) ----
+
+  /// Turns a pixel position into a 0..1 fraction of the canvas so strokes
+  /// scale with the canvas on resize. See [Stroke].
+  Offset _normalize(Offset p, Size size) => Offset(
+        size.width == 0 ? 0 : p.dx / size.width,
+        size.height == 0 ? 0 : p.dy / size.height,
+      );
+
+  void _startStroke(int pointer, Offset local, Size size) => setState(() {
+        _board.redo.clear(); // a fresh stroke invalidates the redo history
+        final stroke = Stroke(
+          color: _color,
+          width: _brush,
+          erase: _erasing,
+          points: [_normalize(local, size)],
+        );
+        _active[pointer] = stroke;
+        _board.strokes.add(stroke);
+      });
+
+  void _extendStroke(int pointer, Offset local, Size size) {
+    final stroke = _active[pointer];
+    if (stroke == null) return;
+    setState(() => stroke.points.add(_normalize(local, size)));
+  }
+
+  void _endStroke(int pointer) => _active.remove(pointer);
 
   void _undo() => setState(() {
         if (_board.strokes.isNotEmpty) {
@@ -108,10 +149,33 @@ class _ColoringPageState extends State<ColoringPage> {
         }
       });
 
-  void _clear() => setState(() {
-        _board.strokes.clear();
-        _board.redo.clear();
-      });
+  /// Clear wipes both the strokes and the redo history, so it can't be undone.
+  /// Because it's destructive, ask first.
+  Future<void> _clear() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear picture?'),
+        content: const Text(
+            "This erases everything on this page and can't be undone."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _board.strokes.clear();
+      _board.redo.clear();
+    });
+  }
 
   void _goTo(int delta) => setState(() {
         _page = (_page + delta).clamp(0, _templates.length - 1);
@@ -152,62 +216,96 @@ class _ColoringPageState extends State<ColoringPage> {
     final canUndo = _board.strokes.isNotEmpty;
     final canRedo = _board.redo.isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_templates[_page].name),
-        actions: [
-          IconButton(
-            tooltip: 'Undo',
-            icon: const Icon(Icons.undo),
-            onPressed: canUndo ? _undo : null,
+    // Desktop/web keyboard shortcuts. Ctrl+Z / Cmd+Z undo, add Shift (or
+    // Ctrl+Y) to redo.
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
+          if (canUndo) _undo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
+          if (canUndo) _undo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
+            () {
+          if (canRedo) _redo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+            () {
+          if (canRedo) _redo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
+          if (canRedo) _redo();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(_templates[_page].name),
+            actions: [
+              IconButton(
+                tooltip: 'Undo (Ctrl+Z)',
+                icon: const Icon(Icons.undo),
+                onPressed: canUndo ? _undo : null,
+              ),
+              IconButton(
+                tooltip: 'Redo (Ctrl+Shift+Z)',
+                icon: const Icon(Icons.redo),
+                onPressed: canRedo ? _redo : null,
+              ),
+              IconButton(
+                tooltip: 'Clear all',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: canUndo ? _clear : null,
+              ),
+              IconButton(
+                tooltip: 'Save picture',
+                icon: const Icon(Icons.save_alt),
+                // Nothing drawn yet -> nothing worth saving.
+                onPressed: canUndo ? _save : null,
+              ),
+            ],
           ),
-          IconButton(
-            tooltip: 'Redo',
-            icon: const Icon(Icons.redo),
-            onPressed: canRedo ? _redo : null,
-          ),
-          IconButton(
-            tooltip: 'Clear all',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: canUndo ? _clear : null,
-          ),
-          IconButton(
-            tooltip: 'Save picture',
-            icon: const Icon(Icons.save_alt),
-            onPressed: _save,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // ---- Drawing canvas ----
-          Expanded(
-            child: RepaintBoundary(
-              key: _canvasKey,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanStart: (d) => setState(() {
-                  _board.redo.clear();
-                  _board.strokes.add(Stroke(
-                    color: _color,
-                    width: _brush,
-                    erase: _erasing,
-                    points: [d.localPosition],
-                  ));
-                }),
-                onPanUpdate: (d) => setState(() {
-                  _board.strokes.last.points.add(d.localPosition);
-                }),
-                child: CustomPaint(
-                  painter: _CanvasPainter(_board.strokes, _templates[_page]),
-                  size: Size.infinite,
+          body: Column(
+            children: [
+              // ---- Drawing canvas ----
+              Expanded(
+                child: RepaintBoundary(
+                  key: _canvasKey,
+                  // LayoutBuilder hands us the live canvas size so we can
+                  // normalize pointer positions against it.
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = constraints.biggest;
+                      return MouseRegion(
+                        cursor: SystemMouseCursors.precise,
+                        // Raw pointer events (not GestureDetector's pan) so we
+                        // can track each finger independently for multi-touch.
+                        child: Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: (e) =>
+                              _startStroke(e.pointer, e.localPosition, size),
+                          onPointerMove: (e) =>
+                              _extendStroke(e.pointer, e.localPosition, size),
+                          onPointerUp: (e) => _endStroke(e.pointer),
+                          onPointerCancel: (e) => _endStroke(e.pointer),
+                          child: CustomPaint(
+                            painter: _CanvasPainter(
+                                _board.strokes, _templates[_page]),
+                            size: Size.infinite,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
+              // ---- Tools ----
+              _buildToolbar(),
+            ],
           ),
-          // ---- Tools ----
-          _buildToolbar(),
-        ],
+        ),
       ),
     );
   }
@@ -248,12 +346,12 @@ class _ColoringPageState extends State<ColoringPage> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  for (final c in _palette) _swatch(c),
+                  for (final entry in _palette) _swatch(entry),
                   _eraserButton(),
                 ],
               ),
             ),
-            // brush size slider
+            // brush size slider + a live preview of the current tool/size
             Row(
               children: [
                 const Icon(Icons.brush, size: 18),
@@ -268,6 +366,8 @@ class _ColoringPageState extends State<ColoringPage> {
                   ),
                 ),
                 Text('${_brush.round()}px'),
+                const SizedBox(width: 8),
+                _brushPreview(),
               ],
             ),
           ],
@@ -276,23 +376,35 @@ class _ColoringPageState extends State<ColoringPage> {
     );
   }
 
-  Widget _swatch(Color c) {
+  Widget _swatch((String, Color) entry) {
+    final (name, c) = entry;
     final selected = !_erasing && c == _color;
-    return GestureDetector(
-      onTap: () => setState(() {
-        _color = c;
-        _erasing = false;
-      }),
-      child: Container(
-        width: 36,
-        height: 36,
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        decoration: BoxDecoration(
-          color: c,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? Colors.black : Colors.black26,
-            width: selected ? 3 : 1,
+    // Tooltip + Semantics give the color a name for hover and screen readers;
+    // InkResponse makes it keyboard-focusable and activatable (unlike a bare
+    // GestureDetector).
+    return Tooltip(
+      message: name,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '$name color',
+        child: InkResponse(
+          onTap: () => setState(() {
+            _color = c;
+            _erasing = false;
+          }),
+          child: Container(
+            width: 36,
+            height: 36,
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            decoration: BoxDecoration(
+              color: c,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected ? Colors.black : Colors.black26,
+                width: selected ? 3 : 1,
+              ),
+            ),
           ),
         ),
       ),
@@ -300,21 +412,52 @@ class _ColoringPageState extends State<ColoringPage> {
   }
 
   Widget _eraserButton() {
-    return GestureDetector(
-      onTap: () => setState(() => _erasing = true),
-      child: Container(
-        width: 36,
-        height: 36,
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: _erasing ? Colors.black : Colors.black26,
-            width: _erasing ? 3 : 1,
+    return Tooltip(
+      message: 'Eraser',
+      child: Semantics(
+        button: true,
+        selected: _erasing,
+        label: 'Eraser',
+        child: InkResponse(
+          onTap: () => setState(() => _erasing = true),
+          child: Container(
+            width: 36,
+            height: 36,
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _erasing ? Colors.black : Colors.black26,
+                width: _erasing ? 3 : 1,
+              ),
+            ),
+            child: const Icon(Icons.cleaning_services, size: 18),
           ),
         ),
-        child: const Icon(Icons.cleaning_services, size: 18),
+      ),
+    );
+  }
+
+  /// A dot showing the current brush size and color (or a hollow circle for
+  /// the eraser), so you can see the tool before touching the canvas.
+  Widget _brushPreview() {
+    return Semantics(
+      label: _erasing ? 'Eraser preview' : 'Brush preview',
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Center(
+          child: Container(
+            width: _brush,
+            height: _brush,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _erasing ? Colors.white : _color,
+              border: Border.all(color: Colors.black45),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -349,12 +492,17 @@ class _CanvasPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..blendMode = s.erase ? BlendMode.clear : BlendMode.srcOver;
 
-      if (s.points.length == 1) {
+      // Points are stored normalized (0..1); scale them back to pixels for
+      // the current canvas size.
+      final pts = [
+        for (final p in s.points) Offset(p.dx * size.width, p.dy * size.height)
+      ];
+      if (pts.length == 1) {
         // a single tap -> draw a dot
-        canvas.drawPoints(ui.PointMode.points, s.points, paint);
+        canvas.drawPoints(ui.PointMode.points, pts, paint);
       } else {
-        final path = Path()..moveTo(s.points.first.dx, s.points.first.dy);
-        for (final p in s.points.skip(1)) {
+        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+        for (final p in pts.skip(1)) {
           path.lineTo(p.dx, p.dy);
         }
         canvas.drawPath(path, paint);

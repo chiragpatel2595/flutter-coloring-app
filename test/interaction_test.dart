@@ -67,4 +67,80 @@ void main() {
     expect(find.textContaining('px'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  IconButton undoButton(WidgetTester tester) => tester.widget<IconButton>(
+      find.ancestor(
+          of: find.byIcon(Icons.undo), matching: find.byType(IconButton)));
+  IconButton redoButton(WidgetTester tester) => tester.widget<IconButton>(
+      find.ancestor(
+          of: find.byIcon(Icons.redo), matching: find.byType(IconButton)));
+
+  testWidgets('clear asks to confirm, then empties the board', (tester) async {
+    await tester.pumpWidget(const ColoringApp());
+
+    await tester.drag(find.byType(CustomPaint).first, const Offset(40, 40));
+    await tester.pump();
+    expect(undoButton(tester).onPressed, isNotNull);
+
+    // Tapping clear opens a confirmation dialog (nothing wiped yet).
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    expect(find.text('Clear picture?'), findsOneWidget);
+    expect(undoButton(tester).onPressed, isNotNull);
+
+    // Confirming wipes the board.
+    await tester.tap(find.widgetWithText(FilledButton, 'Clear'));
+    await tester.pumpAndSettle();
+    expect(undoButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('cancelling clear keeps the drawing', (tester) async {
+    await tester.pumpWidget(const ColoringApp());
+
+    await tester.drag(find.byType(CustomPaint).first, const Offset(40, 40));
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+
+    // Still there.
+    expect(undoButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('starting a new stroke clears the redo stack', (tester) async {
+    await tester.pumpWidget(const ColoringApp());
+
+    // Draw, then undo -> redo becomes available.
+    await tester.drag(find.byType(CustomPaint).first, const Offset(40, 40));
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.undo));
+    await tester.pump();
+    expect(redoButton(tester).onPressed, isNotNull);
+
+    // Draw a fresh stroke -> the redo history is discarded.
+    await tester.drag(find.byType(CustomPaint).first, const Offset(-30, 50));
+    await tester.pump();
+    expect(redoButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('two fingers can draw at the same time without error',
+      (tester) async {
+    await tester.pumpWidget(const ColoringApp());
+    final center = tester.getCenter(find.byType(CustomPaint).first);
+
+    // Two independent pointers, interleaved — exercises the per-pointer map.
+    final f1 = await tester.startGesture(center.translate(-30, 0), pointer: 1);
+    final f2 = await tester.startGesture(center.translate(30, 0), pointer: 2);
+    await f1.moveBy(const Offset(-20, 25));
+    await f2.moveBy(const Offset(20, 25));
+    await tester.pump();
+    await f1.up();
+    await f2.up();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(undoButton(tester).onPressed, isNotNull);
+  });
 }

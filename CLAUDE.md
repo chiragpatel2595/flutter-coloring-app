@@ -43,22 +43,35 @@ Press `r` in a running session for hot-reload, `R` for hot-restart.
   conditional PNG save (`savePng`). Web triggers a browser download via `dart:html`;
   other platforms return a "not wired up" message. No packages.
 - `test/widget_test.dart` — smoke test + undo/redo enable-state test
+- `test/interaction_test.dart` — navigation, per-picture strokes, clear-confirm,
+  redo-cleared-on-new-stroke, multi-touch (two pointers)
+- `test/render_test.dart` — pixel-level guard: captures the canvas and asserts each
+  stroke actually repaints (catches `shouldRepaint`-style "nothing draws" regressions)
 - Standard Flutter platform folders: `android/`, `ios/`, `web/`, `macos/`, etc.
 
 ## How drawing works
 
-Each finger/mouse drag = one `Stroke` appended to the current picture's `_Artboard`.
-`onPanStart` starts a stroke (clearing the redo list), `onPanUpdate` adds points.
+Input comes from a raw `Listener` (not `GestureDetector`), so each pointer is tracked
+separately in `_active` (a `Map<int, Stroke>` keyed by pointer id) — that's what makes
+**multi-touch** work: two fingers get two independent strokes. Pointer-down starts a
+stroke (clearing the redo list), pointer-move extends it, pointer-up/cancel ends it.
+A `LayoutBuilder` supplies the live canvas size so points are stored **normalized**
+(0..1 fractions of the canvas), and scaled back to pixels in `_CanvasPainter`. This keeps
+strokes aligned with the outline when the window resizes instead of drifting.
+
 `_CanvasPainter` paints in order: white background → template outline → a `saveLayer`
 holding the user strokes. Eraser strokes use `BlendMode.clear` inside that layer, so
 they punch back to the outline/background (a *real* eraser, not white paint).
 
 - **Undo/redo** — per picture: undo moves the last stroke to `redo`, redo moves it back;
-  a new stroke clears `redo`. **Clear** empties both (not itself undoable).
+  a new stroke clears `redo`. Keyboard shortcuts: Ctrl/Cmd+Z undo, add Shift (or Ctrl+Y)
+  to redo. **Clear** empties both and can't be undone, so it asks for confirmation first.
 - **Multiple pictures** — each `ColoringTemplate` has its own `_Artboard`, so switching
   with the prev/next arrows preserves each picture's artwork.
 - **Save** — a `RepaintBoundary` around the canvas is captured to a PNG and passed to
-  `savePng`.
+  `savePng`. Disabled until something is drawn.
+- **Accessibility** — swatches/eraser are `InkResponse` + `Tooltip` + `Semantics`
+  (named, focusable, activatable). A brush-size preview dot sits by the slider.
 
 ## Conventions
 
@@ -71,8 +84,10 @@ they punch back to the outline/background (a *real* eraser, not white paint).
 
 ## Ideas / next steps
 
-Done: undo/redo, vector outline backgrounds, multiple pictures with navigation, and
-web PNG save (real `BlendMode.clear` eraser). Possible follow-ups:
+Done: undo/redo (+ keyboard shortcuts), vector outline backgrounds, multiple pictures
+with navigation, web PNG save (real `BlendMode.clear` eraser), multi-touch drawing,
+resize-safe normalized strokes, clear-confirmation, accessible swatches, brush preview,
+and a pixel-level repaint test. Possible follow-ups:
 
 - Real device-gallery save on iOS/Android (would add `path_provider` + a gallery/share
   package and per-platform permission config — currently save is web-only)
