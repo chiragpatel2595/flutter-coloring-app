@@ -1,18 +1,31 @@
 import 'package:flutter/material.dart';
 
-/// One continuous finger/mouse stroke: a color, a width, whether it erases,
-/// and the points it covers.
+/// The kind of brush a [Stroke] was drawn with. Each renders differently in
+/// `CanvasPainter` (see there for the exact paint used):
+/// - [pen]: solid, opaque line.
+/// - [marker]: semi-transparent flat line that layers where it overlaps.
+/// - [highlighter]: very transparent, wide, flat line.
+/// - [spray]: an airbrush — scattered dots that build up density.
+enum BrushType { pen, marker, highlighter, spray }
+
+/// One continuous finger/mouse stroke: a brush type, a color, a width, whether
+/// it erases, and the points it covers.
 ///
 /// Points are stored *normalized* to the canvas size — each is a fraction in
 /// 0..1 of the width/height at draw time. That way, when the window resizes
 /// the strokes scale with the canvas (and stay put over the outline) instead
 /// of being pinned to stale pixel coordinates.
+///
+/// For [BrushType.spray] the points are pre-scattered at draw time (baked), so
+/// the airbrush stays stable across repaints instead of shimmering.
 class Stroke {
+  final BrushType type;
   final Color color;
   final double width;
   final bool erase;
   final List<Offset> points;
   Stroke({
+    required this.type,
     required this.color,
     required this.width,
     required this.erase,

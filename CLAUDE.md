@@ -69,6 +69,12 @@ strokes aligned with the outline when the window resizes instead of drifting.
 holding the user strokes. Eraser strokes use `BlendMode.clear` inside that layer, so
 they punch back to the outline/background (a *real* eraser, not white paint).
 
+- **Brushes** — `BrushType` (pen / marker / highlighter / spray) selected in the toolbar.
+  Pen is a solid line; marker and highlighter are semi-transparent flat lines; spray is
+  an airbrush whose scattered dots are *baked* at draw time (in `_pointsAt`) so it stays
+  stable across repaints. `CanvasPainter._paintFor` maps each type to its `Paint`.
+- **Colors** — 8 preset swatches plus a custom HSV picker (`color_picker.dart`); picked
+  colors are remembered as extra swatches.
 - **Undo/redo** — per picture: undo moves the last stroke to `redo`, redo moves it back;
   a new stroke clears `redo`. Keyboard shortcuts: Ctrl/Cmd+Z undo, add Shift (or Ctrl+Y)
   to redo. **Clear** empties both and can't be undone, so it asks for confirmation first.

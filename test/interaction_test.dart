@@ -144,6 +144,21 @@ void main() {
     expect(undoButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets('selecting the spray brush and drawing works', (tester) async {
+    await tester.pumpWidget(const ColoringApp());
+
+    // Pick the spray brush (blur icon), then draw.
+    await tester.tap(find.byIcon(Icons.blur_on));
+    await tester.pump();
+    await tester.drag(find.byType(CustomPaint).first, const Offset(50, 30));
+    await tester.pump();
+
+    // Spray bakes a burst of scattered points per move — should not throw and
+    // should register a stroke.
+    expect(tester.takeException(), isNull);
+    expect(undoButton(tester).onPressed, isNotNull);
+  });
+
   testWidgets('custom color picker opens and adds a swatch', (tester) async {
     await tester.pumpWidget(const ColoringApp());
 

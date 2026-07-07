@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -33,6 +34,10 @@ class _ColoringPageState extends State<ColoringPage> {
   Color _color = Colors.red;
   double _brush = 12;
   bool _erasing = false;
+  BrushType _brushType = BrushType.pen;
+
+  // For the spray brush's random scatter (see _pointsAt).
+  final math.Random _rng = math.Random();
 
   Artboard get _board => _boards[_page];
 
@@ -60,13 +65,30 @@ class _ColoringPageState extends State<ColoringPage> {
         size.height == 0 ? 0 : p.dy / size.height,
       );
 
+  /// The point(s) to add for a touch at [local]. Most brushes add a single
+  /// point; the spray brush bakes a small burst of scattered points around it
+  /// (radius = brush size) so the airbrush look is stable across repaints.
+  List<Offset> _pointsAt(Offset local, Size size) {
+    if (_erasing || _brushType != BrushType.spray) {
+      return [_normalize(local, size)];
+    }
+    return List.generate(6, (_) {
+      final angle = _rng.nextDouble() * 2 * math.pi;
+      final dist = _rng.nextDouble() * _brush;
+      final p = local + Offset(math.cos(angle) * dist, math.sin(angle) * dist);
+      return _normalize(p, size);
+    });
+  }
+
   void _startStroke(int pointer, Offset local, Size size) => setState(() {
         _board.redo.clear(); // a fresh stroke invalidates the redo history
         final stroke = Stroke(
+          // The eraser ignores brush type; store pen so it paints a plain line.
+          type: _erasing ? BrushType.pen : _brushType,
           color: _color,
           width: _brush,
           erase: _erasing,
-          points: [_normalize(local, size)],
+          points: _pointsAt(local, size),
         );
         _active[pointer] = stroke;
         _board.strokes.add(stroke);
@@ -75,7 +97,7 @@ class _ColoringPageState extends State<ColoringPage> {
   void _extendStroke(int pointer, Offset local, Size size) {
     final stroke = _active[pointer];
     if (stroke == null) return;
-    setState(() => stroke.points.add(_normalize(local, size)));
+    setState(() => stroke.points.addAll(_pointsAt(local, size)));
   }
 
   void _endStroke(int pointer) => _active.remove(pointer);
@@ -313,6 +335,8 @@ class _ColoringPageState extends State<ColoringPage> {
                 ],
               ),
             ),
+            // brush type selector
+            _brushTypeSelector(),
             // brush size slider + a live preview of the current tool/size
             Row(
               children: [
@@ -333,6 +357,45 @@ class _ColoringPageState extends State<ColoringPage> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Icon-only segmented control for choosing the brush type. Choosing one
+  /// also turns the eraser off; while erasing, no brush is highlighted.
+  Widget _brushTypeSelector() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SegmentedButton<BrushType>(
+          showSelectedIcon: false,
+          emptySelectionAllowed: true,
+          segments: const [
+            ButtonSegment(
+                value: BrushType.pen, icon: Icon(Icons.edit), tooltip: 'Pen'),
+            ButtonSegment(
+                value: BrushType.marker,
+                icon: Icon(Icons.brush),
+                tooltip: 'Marker'),
+            ButtonSegment(
+                value: BrushType.highlighter,
+                icon: Icon(Icons.border_color),
+                tooltip: 'Highlighter'),
+            ButtonSegment(
+                value: BrushType.spray,
+                icon: Icon(Icons.blur_on),
+                tooltip: 'Spray'),
+          ],
+          selected: _erasing ? const <BrushType>{} : {_brushType},
+          onSelectionChanged: (selection) {
+            if (selection.isEmpty) return;
+            setState(() {
+              _brushType = selection.first;
+              _erasing = false;
+            });
+          },
         ),
       ),
     );

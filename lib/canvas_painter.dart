@@ -27,20 +27,17 @@ class CanvasPainter extends CustomPainter {
 
     canvas.saveLayer(bounds, Paint());
     for (final s in strokes) {
-      final paint = Paint()
-        ..color = s.color
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..strokeWidth = s.width
-        ..style = PaintingStyle.stroke
-        ..blendMode = s.erase ? BlendMode.clear : BlendMode.srcOver;
-
       // Points are stored normalized (0..1); scale them back to pixels for
       // the current canvas size.
       final pts = [
         for (final p in s.points) Offset(p.dx * size.width, p.dy * size.height)
       ];
-      if (pts.length == 1) {
+      final paint = _paintFor(s);
+
+      // Spray is a cloud of baked dots; every other brush is a line/dot.
+      if (!s.erase && s.type == BrushType.spray) {
+        canvas.drawPoints(ui.PointMode.points, pts, paint);
+      } else if (pts.length == 1) {
         // a single tap -> draw a dot
         canvas.drawPoints(ui.PointMode.points, pts, paint);
       } else {
@@ -52,6 +49,45 @@ class CanvasPainter extends CustomPainter {
       }
     }
     canvas.restore();
+  }
+
+  /// Builds the [Paint] for a stroke based on its brush type. The eraser
+  /// (`s.erase`) always wins — it punches through with `BlendMode.clear`
+  /// regardless of brush.
+  Paint _paintFor(Stroke s) {
+    final paint = Paint()
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = s.width
+      ..style = PaintingStyle.stroke;
+
+    if (s.erase) {
+      return paint
+        ..color = s.color
+        ..blendMode = BlendMode.clear;
+    }
+
+    switch (s.type) {
+      case BrushType.pen:
+        paint.color = s.color;
+      case BrushType.marker:
+        // Semi-transparent with a flat cap, so it reads like a felt marker.
+        paint
+          ..color = s.color.withValues(alpha: 0.55)
+          ..strokeCap = StrokeCap.square;
+      case BrushType.highlighter:
+        // Very transparent + flat: classic see-through highlighter.
+        paint
+          ..color = s.color.withValues(alpha: 0.30)
+          ..strokeCap = StrokeCap.butt;
+      case BrushType.spray:
+        // Baked dots; low alpha so overlapping dots build up density. The
+        // dot size is a fraction of the brush (which sets the scatter radius).
+        paint
+          ..color = s.color.withValues(alpha: 0.45)
+          ..strokeWidth = (s.width * 0.22).clamp(2.0, 12.0);
+    }
+    return paint;
   }
 
   @override
