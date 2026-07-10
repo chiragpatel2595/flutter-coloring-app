@@ -392,20 +392,28 @@ class _ColoringPageState extends State<ColoringPage> {
                 ),
               ],
             ),
-            // color swatches + custom colors + add-color + eraser
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final entry in _palette) _swatch(entry.$1, entry.$2),
-                  for (final c in _customColors)
-                    _swatch('Custom color', c),
-                  _addColorButton(),
-                  _bucketButton(),
-                  _eraserButton(),
-                ],
-              ),
+            // Colors scroll horizontally; the tool buttons (add-color, paint
+            // bucket, eraser) stay pinned on the right so they're always
+            // reachable — even on a narrow phone where the swatches overflow.
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        for (final entry in _palette) _swatch(entry.$1, entry.$2),
+                        for (final c in _customColors)
+                          _swatch('Custom color', c),
+                      ],
+                    ),
+                  ),
+                ),
+                _addColorButton(),
+                _bucketButton(),
+                _eraserButton(),
+              ],
             ),
             // brush type selector
             _brushTypeSelector(),
