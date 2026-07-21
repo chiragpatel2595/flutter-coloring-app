@@ -68,7 +68,7 @@ class _ColoringPageState extends State<ColoringPage>
   // instead of the second finger hijacking the first finger's line.
   final Map<int, Stroke> _active = {};
 
-  Color _color = Colors.red;
+  Color _color = kCrayonColors.first.$2;
   double _brush = kBrushSizes[1].$2; // "Medium" — must match a preset exactly,
   // since the size picker highlights by value equality.
   bool _erasing = false;
@@ -78,17 +78,9 @@ class _ColoringPageState extends State<ColoringPage>
   // For the spray brush's random scatter (see _pointsAt).
   final math.Random _rng = math.Random();
 
-  // (name, color) pairs — the name is used for tooltips and screen readers.
-  static const _palette = <(String, Color)>[
-    ('Red', Colors.red),
-    ('Orange', Colors.orange),
-    ('Yellow', Colors.yellow),
-    ('Green', Colors.green),
-    ('Blue', Colors.blue),
-    ('Purple', Colors.purple),
-    ('Brown', Colors.brown),
-    ('Black', Colors.black),
-  ];
+  // The crayons live in kid_palette.dart alongside the UI colors, so the whole
+  // scheme is readable in one place.
+  static const _palette = kCrayonColors;
 
   // Colors the user mixed with the custom picker, shown as extra swatches.
   final List<Color> _customColors = [];
@@ -233,10 +225,16 @@ class _ColoringPageState extends State<ColoringPage>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(foregroundColor: KidPalette.ink),
             child: const Text('Cancel'),
           ),
+          // Destructive, so it wears the error color rather than the primary.
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: KidPalette.error,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Clear'),
           ),
         ],
@@ -283,7 +281,10 @@ class _ColoringPageState extends State<ColoringPage>
       image.dispose();
       if (byteData == null) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('Could not capture the canvas.')),
+          const SnackBar(
+            content: Text('Could not capture the canvas.'),
+            backgroundColor: KidPalette.error,
+          ),
         );
         return;
       }
@@ -292,9 +293,16 @@ class _ColoringPageState extends State<ColoringPage>
         byteData.buffer.asUint8List(),
         'coloring_$safeName.png',
       );
-      messenger.showSnackBar(SnackBar(content: Text(msg)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: KidPalette.success),
+      );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Save failed: $e'),
+          backgroundColor: KidPalette.error,
+        ),
+      );
     }
   }
 
@@ -360,52 +368,84 @@ class _ColoringPageState extends State<ColoringPage>
           ),
           body: Column(
             children: [
-              // ---- Drawing canvas ----
+              // ---- Drawing canvas: a sheet of paper on a colored table ----
+              //
+              // The rounded clip and shadow sit *outside* the RepaintBoundary
+              // on purpose. toImage() captures the boundary's own subtree, so
+              // saving a PNG and rasterizing for the flood fill still get a
+              // clean rectangle of paper — the corners are rounded only on
+              // screen. Put the clip inside and every saved picture would come
+              // out with transparent corners.
               Expanded(
-                child: RepaintBoundary(
-                  key: _canvasKey,
-                  // LayoutBuilder hands us the live canvas size so we can
-                  // normalize pointer positions against it.
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final size = constraints.biggest;
-                      return MouseRegion(
-                        cursor: SystemMouseCursors.precise,
-                        // Raw pointer events (not GestureDetector's pan) so we
-                        // can track each finger independently for multi-touch.
-                        child: Listener(
-                          behavior: HitTestBehavior.opaque,
-                          onPointerDown: (e) {
-                            // The bucket is a single-tap tool; everything else
-                            // starts a stroke.
-                            if (_filling) {
-                              _floodFill(e.localPosition, size);
-                            } else {
-                              _startStroke(e.pointer, e.localPosition, size);
-                            }
-                          },
-                          onPointerMove: (e) =>
-                              _extendStroke(e.pointer, e.localPosition, size),
-                          onPointerUp: (e) => _endStroke(e.pointer),
-                          onPointerCancel: (e) => _endStroke(e.pointer),
-                          // AnimatedBuilder rebuilds just this subtree on every
-                          // frame of the pop, so we get the animation without
-                          // calling setState 60 times a second.
-                          child: AnimatedBuilder(
-                            animation: _popController,
-                            builder: (context, _) => CustomPaint(
-                              painter: CanvasPainter(
-                                _board.layers,
-                                kActiveTemplate,
-                                popStroke: _popStroke,
-                                popT: _popController.value,
-                              ),
-                              size: Size.infinite,
-                            ),
-                          ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: KidPalette.ink.withValues(alpha: 0.18),
+                          blurRadius: 14,
+                          offset: const Offset(0, 5),
                         ),
-                      );
-                    },
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: RepaintBoundary(
+                        key: _canvasKey,
+                        // LayoutBuilder hands us the live canvas size so we can
+                        // normalize pointer positions against it.
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final size = constraints.biggest;
+                            return MouseRegion(
+                              cursor: SystemMouseCursors.precise,
+                              // Raw pointer events (not GestureDetector's pan) so we
+                              // can track each finger independently for multi-touch.
+                              child: Listener(
+                                behavior: HitTestBehavior.opaque,
+                                onPointerDown: (e) {
+                                  // The bucket is a single-tap tool; everything else
+                                  // starts a stroke.
+                                  if (_filling) {
+                                    _floodFill(e.localPosition, size);
+                                  } else {
+                                    _startStroke(
+                                      e.pointer,
+                                      e.localPosition,
+                                      size,
+                                    );
+                                  }
+                                },
+                                onPointerMove: (e) => _extendStroke(
+                                  e.pointer,
+                                  e.localPosition,
+                                  size,
+                                ),
+                                onPointerUp: (e) => _endStroke(e.pointer),
+                                onPointerCancel: (e) => _endStroke(e.pointer),
+                                // AnimatedBuilder rebuilds just this subtree on every
+                                // frame of the pop, so we get the animation without
+                                // calling setState 60 times a second.
+                                child: AnimatedBuilder(
+                                  animation: _popController,
+                                  builder: (context, _) => CustomPaint(
+                                    painter: CanvasPainter(
+                                      _board.layers,
+                                      kActiveTemplate,
+                                      popStroke: _popStroke,
+                                      popT: _popController.value,
+                                    ),
+                                    size: Size.infinite,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -423,7 +463,12 @@ class _ColoringPageState extends State<ColoringPage>
       // The selected size dot scales up past its box, so the bottom padding
       // keeps it clear of the system navigation bar.
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
-      color: KidPalette.paper,
+      decoration: const BoxDecoration(
+        color: KidPalette.toolbar,
+        // The canvas is white and so is the toolbar, so a hairline is what
+        // separates "picture" from "controls".
+        border: Border(top: BorderSide(color: KidPalette.outline)),
+      ),
       child: SafeArea(
         top: false,
         child: Column(
@@ -437,7 +482,13 @@ class _ColoringPageState extends State<ColoringPage>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Flexible(child: _brushTypeSelector()),
-                Row(children: [_bucketButton(), _eraserButton()]),
+                Row(
+                  children: [
+                    _addColorButton(),
+                    _bucketButton(),
+                    _eraserButton(),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -448,25 +499,24 @@ class _ColoringPageState extends State<ColoringPage>
     );
   }
 
-  /// The colors, drawn as crayons standing in a cardboard tray.
+  /// The crayons, standing in a row on the white toolbar.
   ///
-  /// Nothing but crayons lives in here. The tray scrolls horizontally, so any
+  /// There's no drawn tray behind them: with sixteen crayons the row is already
+  /// the most colorful thing on screen, and a cardboard box around it was one
+  /// decoration too many. The crayons' own shapes make the row read as a set.
+  ///
+  /// Nothing but crayons lives in here. The row scrolls horizontally, so any
   /// button parked at its ends would be taken for a scroll control — the
-  /// picture arrows sit up in the app bar beside the name instead.
+  /// picture arrows sat there once and read as "scroll the crayons".
   ///
-  /// The tray is padded at the top so the chosen crayon has room to rise into
-  /// it — no clipping, and the crayons sit on the tray floor via
-  /// [CrossAxisAlignment.end]. The "add a color" button rides at the end of the
-  /// row so new colors appear right where you'd reach for them.
+  /// The row reserves space at the top so the chosen crayon has room to rise —
+  /// no clipping — and the crayons sit on its floor via
+  /// [CrossAxisAlignment.end]. The "add a color" button used to ride at the end
+  /// of this row; with sixteen crayons that put it past 800px of scrolling, so
+  /// it moved to the always-visible tool row.
   Widget _crayonTray() {
-    return Container(
-      height: Crayon.height + Crayon.liftRoom + 16,
-      decoration: BoxDecoration(
-        color: KidPalette.kraft,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: KidPalette.kraftDark, width: 2),
-      ),
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+    return SizedBox(
+      height: Crayon.height + Crayon.liftRoom + 8,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -486,7 +536,6 @@ class _ColoringPageState extends State<ColoringPage>
                 selected: !_erasing && c == _color,
                 onTap: () => _pickColor(c),
               ),
-            _addColorButton(),
           ],
         ),
       ),
@@ -530,12 +579,14 @@ class _ColoringPageState extends State<ColoringPage>
               width: 58,
               height: 52,
               alignment: Alignment.center,
+              // Outlined rather than filled: the dot inside is whatever color
+              // the child picked, and a solid accent behind it would clash with
+              // half the crayons.
               decoration: BoxDecoration(
-                color: selected ? KidPalette.kraft : Colors.transparent,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: selected ? KidPalette.cocoa : Colors.transparent,
-                  width: 2,
+                  color: selected ? KidPalette.primary : Colors.transparent,
+                  width: 3,
                 ),
               ),
               child: Container(
@@ -544,7 +595,7 @@ class _ColoringPageState extends State<ColoringPage>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: _erasing ? Colors.white : _color,
-                  border: Border.all(color: KidPalette.cocoa, width: 1.5),
+                  border: Border.all(color: KidPalette.outline, width: 1.5),
                 ),
               ),
             ),
@@ -617,15 +668,21 @@ class _ColoringPageState extends State<ColoringPage>
               height: 52,
               margin: const EdgeInsets.symmetric(horizontal: 3),
               alignment: Alignment.center,
+              // A selected tool fills with the primary accent and flips its
+              // icon to white — the one place a solid accent appears.
               decoration: BoxDecoration(
-                color: fill ?? (selected ? KidPalette.kraft : Colors.white),
+                color: fill ?? (selected ? KidPalette.primary : Colors.white),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: selected ? KidPalette.cocoa : KidPalette.cocoaSoft,
+                  color: selected ? KidPalette.primary : KidPalette.outline,
                   width: selected ? 3 : 2,
                 ),
               ),
-              child: Icon(icon, size: 26, color: iconColor ?? KidPalette.cocoa),
+              child: Icon(
+                icon,
+                size: 26,
+                color: iconColor ?? (selected ? Colors.white : KidPalette.ink),
+              ),
             ),
           ),
         ),
@@ -634,41 +691,21 @@ class _ColoringPageState extends State<ColoringPage>
   }
 
   /// An empty rainbow slot at the end of the tray — "mix your own crayon".
-  /// Sized to match a crayon so the row reads as one set of choices.
+  /// "Mix your own color" — the one place the secondary accent appears.
+  ///
+  /// It sits with the tools rather than in the crayon row: sixteen crayons make
+  /// that row scroll well past the screen, which would have buried it. Flat
+  /// yellow rather than the rainbow gradient it once had — next to a row of
+  /// crayons, one more multicolored thing just read as noise.
   Widget _addColorButton() {
-    return Tooltip(
-      message: 'Custom color',
-      child: Semantics(
-        button: true,
-        label: 'Add a custom color',
-        child: InkResponse(
-          onTap: _pickCustomColor,
-          radius: Crayon.width,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 5),
-            child: Container(
-              width: Crayon.width,
-              height: Crayon.height * 0.72,
-              decoration: BoxDecoration(
-                gradient: const SweepGradient(
-                  colors: [
-                    Colors.red,
-                    Colors.yellow,
-                    Colors.green,
-                    Colors.cyan,
-                    Colors.blue,
-                    Colors.purple,
-                    Colors.red,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: KidPalette.cocoa, width: 1.5),
-              ),
-              child: const Icon(Icons.add, size: 24, color: Colors.white),
-            ),
-          ),
-        ),
-      ),
+    return _chunkyButton(
+      tooltip: 'Custom color',
+      semanticLabel: 'Add a custom color',
+      icon: Icons.add,
+      selected: false,
+      fill: KidPalette.secondary,
+      iconColor: KidPalette.ink,
+      onTap: _pickCustomColor,
     );
   }
 
@@ -681,9 +718,9 @@ class _ColoringPageState extends State<ColoringPage>
       icon: Icons.format_color_fill,
       selected: _filling,
       fill: _color,
-      // Keep the icon legible on both a pale yellow and a near-black fill.
+      // Keep the icon legible on both a pale peach and a near-black fill.
       iconColor: _color.computeLuminance() > 0.5
-          ? KidPalette.cocoa
+          ? KidPalette.ink
           : Colors.white,
       onTap: () => setState(() {
         _filling = true;

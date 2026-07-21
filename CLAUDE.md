@@ -46,12 +46,15 @@ The app is split into small, focused files (was one big `main.dart`):
   strokes in a `saveLayer` (real `BlendMode.clear` eraser).
 - `lib/color_picker.dart` — `showColorPickerDialog`: a package-free HSV color picker
   (hue/saturation/brightness sliders + live preview).
-- `lib/kid_palette.dart` — the chrome colors (paper / kraft / cocoa) and `kBrushSizes`,
-  the four named brush presets that replaced the px slider.
+- `lib/kid_palette.dart` — the whole color scheme in one file: the chrome tokens
+  (background / toolbar / primary / secondary / success / error / ink / outline), the
+  16 `kCrayonColors`, and `kBrushSizes`, the four named brush presets that replaced the
+  px slider.
 - `lib/crayon.dart` — `Crayon`: one drawable crayon (waxy tip, body, paper wrapper +
   stripes) that lifts and tilts when selected. The app's signature element.
 - `lib/flood_fill.dart` — pure `floodFill()` over a raw RGBA buffer (no engine), so the
-  paint-bucket algorithm is unit-testable on its own.
+  paint-bucket algorithm is unit-testable on its own. Includes the soft-edge growth
+  passes that stop fills leaving a halo around anti-aliased strokes.
 - `lib/save_image.dart` + `save_image_stub.dart` + `save_image_web.dart` — platform-
   conditional PNG save (`savePng`). Web triggers a browser download via `dart:html`;
   other platforms return a "not wired up" message. No packages.
@@ -83,12 +86,20 @@ they punch back to the outline/background (a *real* eraser, not white paint).
   Pen is a solid line; marker and highlighter are semi-transparent flat lines; spray is
   an airbrush whose scattered dots are *baked* at draw time (in `_pointsAt`) so it stays
   stable across repaints. `CanvasPainter._paintFor` maps each type to its `Paint`.
-- **Colors** — 8 preset crayons in a cardboard tray, plus a rainbow "mix your own" slot
-  that opens the custom HSV picker (`color_picker.dart`); picked colors are remembered
-  as extra crayons. The chosen crayon rises out of the tray and tilts (`Curves.elasticOut`)
-  instead of getting a selection ring — position and angle read faster than a border.
-  Each crayon reserves `Crayon.liftRoom` above itself so the rise isn't clipped by the
-  scrolling tray.
+- **Colors** — 16 crayons (`kCrayonColors`) in spectrum order, scrolling on the plain
+  white toolbar. There's no drawn tray: with that many crayons the row is already the
+  most colorful thing on screen. Picked custom colors are remembered as extra crayons.
+  The chosen crayon rises and tilts (`Curves.elasticOut`) instead of getting a selection
+  ring — position and angle read faster than a border. Each crayon reserves
+  `Crayon.liftRoom` above itself so the rise isn't clipped by the scroll view.
+  `Crayon` shades each wrapper from the crayon's own color; the light/dark cutoff sits
+  at L<0.30, not 0.5, or vivid mid-darks (teal, brown) get washed-out pale bodies.
+- **UI color** — the chrome is deliberately plainer than the crayons. Surfaces are
+  white on an off-white background separated by hairlines; `primary` marks the selected
+  tool (the only solid accent), `secondary` the "mix your own color" button, and
+  `success`/`error` the save and destructive paths. The "add a color" button lives with
+  the tools, not in the crayon row — sixteen crayons scroll well past the screen and
+  would bury it.
 - **Brush size** — four preset dots (`kBrushSizes`), not a slider. The dot shows the real
   brush color at a comparable size, so it doubles as the preview and needs no "12px"
   label — a child picks by looking, not by reading.
@@ -97,6 +108,13 @@ they punch back to the outline/background (a *real* eraser, not white paint).
   rasterizes the canvas, runs the pure `floodFill()`, bakes the result to a `Fill`
   (`ui.Image`), and adds it as a layer. `Fill` images are disposed when discarded
   (clear, or a redo pile dropped by a new action).
+  **Soft edges**: strokes are anti-aliased, so their edges are a 1–2px band that's too
+  far from white to pass the fill tolerance but too pale to read as stroke — a plain
+  flood fill leaves a pale halo tracing every stroke (made worse by the fill being
+  captured at `pixelRatio: 1` and stretched back up). `floodFill` therefore grows
+  `edgePasses` extra rings using a looser `edgeTol`. The growth test compares against
+  the *seed* color, not the neighbour, so it can never walk through a barrier no matter
+  how many passes run — there's a test pinning exactly that.
 - **Stroke "pop"** — lifting your finger briefly swells the stroke you just drew, then
   settles it back. An `AnimationController` on `_ColoringPageState` (created in
   `initState`, released in `dispose`) drives a 0→1 value; an `AnimatedBuilder` around

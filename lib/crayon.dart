@@ -105,17 +105,24 @@ class _CrayonPainter extends CustomPainter {
     final w = size.width, h = size.height;
     final tipH = h * 0.18;
 
-    // Dark colors need a *lighter* wrapper to stay visible, light colors need a
-    // darker one — so pick the direction from the color itself.
-    final isDark = HSLColor.fromColor(color).lightness <= 0.5;
+    // The wrapper is normally a shade *darker* than the wax. Only genuinely
+    // dark crayons flip to a lighter wrapper, because darkening near-black
+    // produces no visible band at all.
+    //
+    // The cutoff is deliberately low. At 0.5, mid-dark but vivid colors like
+    // teal (L≈0.38) and brown (L≈0.36) were treated as dark and got washed-out
+    // pale bodies that looked wrong beside their own tips; only black (L≈0.24)
+    // actually needs the flip. This is also what keeps the white crayon legible
+    // on the white toolbar — its wrapper darkens to grey instead of vanishing.
+    final isDark = HSLColor.fromColor(color).lightness < 0.30;
     final wrapColor = _shade(color, isDark ? 0.16 : -0.15);
-    final stripeColor = _shade(color, isDark ? 0.32 : 0.22);
+    final stripeColor = _shade(color, isDark ? 0.32 : -0.28);
 
     final outline = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
       ..strokeJoin = StrokeJoin.round
-      ..color = KidPalette.cocoa;
+      ..color = KidPalette.ink;
 
     // ---- body (below the tip) ----
     final body = RRect.fromRectAndCorners(

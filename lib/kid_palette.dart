@@ -1,29 +1,71 @@
 import 'package:flutter/material.dart';
 
-/// The app's *chrome* colors — the toolbar, tray, and outlines.
+/// The app's *chrome* colors — background, toolbar, and the few semantic
+/// accents.
 ///
-/// Deliberately quiet and warm: the crayons the child picks are the only loud
-/// thing on screen, so everything around them stays out of the way. Nothing
-/// here is pure black or pure grey — a coloring app should feel like paper and
-/// cardboard, not like a settings screen.
+/// Deliberately plainer than [kCrayonColors]: sixteen crayons are already a lot
+/// of color, so the surfaces around them stay near-white and the accents are
+/// reserved for state (what's selected, what worked, what's destructive).
+/// Nothing here competes with the child's drawing.
 class KidPalette {
   KidPalette._();
 
-  /// Warm sugar-paper. The toolbar and app background.
-  static const paper = Color(0xFFFFF6E9);
+  /// The surface the paper sits on — think of a sheet laid on a colored table.
+  ///
+  /// Soft aqua rather than a bold primary: it's on screen the entire session
+  /// and sits directly around the child's drawing, so it has to be cheerful
+  /// without competing with the artwork. The white sheet reads as *paper*
+  /// precisely because something colored surrounds it.
+  static const table = Color(0xFFA0E7E5);
 
-  /// Cardboard — the tray the crayons stand in.
-  static const kraft = Color(0xFFE0B072);
+  /// Warm off-white, for surfaces that want warmth rather than pure white.
+  static const background = Color(0xFFFFFDF6);
 
-  /// A slightly deeper cardboard for the tray's front lip.
-  static const kraftDark = Color(0xFFC98F52);
+  /// Pure white. The toolbar and app bar surfaces.
+  static const toolbar = Color(0xFFFFFFFF);
 
-  /// Soft dark brown for text and outlines. Reads as drawn rather than printed.
-  static const cocoa = Color(0xFF4A3428);
+  /// The selected/active accent — a tool that's currently in use.
+  static const primary = Color(0xFF4D96FF);
 
-  /// Cocoa at low opacity, for resting (unselected) outlines.
-  static const cocoaSoft = Color(0x334A3428);
+  /// The softer accent, for the "mix your own color" affordance.
+  static const secondary = Color(0xFFFFD93D);
+
+  /// Confirmation — a picture saved.
+  static const success = Color(0xFF6BCB77);
+
+  /// Destructive or failed — clearing the board, a save that didn't work.
+  static const error = Color(0xFFFF6B6B);
+
+  /// Text and outlines. Soft black, never pure #000.
+  static const ink = Color(0xFF3D3D3D);
+
+  /// Resting borders and dividers, and disabled icons.
+  static const outline = Color(0xFFBDBDBD);
 }
+
+/// The sixteen crayons in the tray, in spectrum order so the row reads like a
+/// real crayon box: warm → cool → neutrals.
+///
+/// The names are what tooltips and screen readers announce, so they're the
+/// plain words a child would use, not hex or Material shade numbers.
+const kCrayonColors = <(String, Color)>[
+  ('Red', Color(0xFFFF5252)),
+  ('Orange', Color(0xFFFF9F45)),
+  ('Yellow', Color(0xFFFFD93D)),
+  ('Lime', Color(0xFFB5E61D)),
+  ('Green', Color(0xFF6BCB77)),
+  ('Teal', Color(0xFF00C2A8)),
+  ('Blue', Color(0xFF4D96FF)),
+  ('Indigo', Color(0xFF5E60CE)),
+  ('Purple', Color(0xFF9B5DE5)),
+  ('Pink', Color(0xFFFF7EB6)),
+  ('Brown', Color(0xFF8B5A2B)),
+  ('Gray', Color(0xFFBDBDBD)),
+  ('Black', Color(0xFF3D3D3D)),
+  ('White', Color(0xFFFFFFFF)),
+  ('Peach', Color(0xFFFFD6A5)),
+  ('Sky', Color(0xFFA0E7E5)),
+];
 
 /// The four brush sizes a child can pick, smallest to biggest.
 ///
