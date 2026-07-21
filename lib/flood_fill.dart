@@ -10,6 +10,21 @@ import 'dart:typed_data';
 ///
 /// Returns null when there's nothing to do — the seed is already within 8 of
 /// the fill color — so the caller can skip creating an empty fill.
+///
+/// ## Soft edges
+///
+/// Strokes are drawn anti-aliased, so a stroke's edge isn't a clean red/white
+/// step — it's a 1–2px band of in-between pixels. Those are too far from white
+/// to pass [tol], but too pale to look like the stroke, so a plain flood fill
+/// leaves a pale halo tracing every stroke.
+///
+/// After the fill, [edgePasses] extra rings are added: an unfilled pixel joins
+/// if it touches the region *and* is within the looser [edgeTol] of the seed.
+/// That swallows the anti-aliased band and tucks the fill under the stroke.
+///
+/// Crucially the test is against the **seed color**, not the neighbor, so this
+/// can't walk through a barrier however many passes run: solid black or solid
+/// red is nowhere near white, fails [edgeTol], and stops the growth dead.
 Uint8List? floodFill(
   Uint8List src,
   int w,
@@ -17,8 +32,10 @@ Uint8List? floodFill(
   int sx,
   int sy,
   int fillArgb,
-  int tol,
-) {
+  int tol, {
+  int edgeTol = 160,
+  int edgePasses = 2,
+}) {
   final seed = (sy * w + sx) * 4;
   final sr = src[seed], sg = src[seed + 1], sb = src[seed + 2];
 
@@ -32,8 +49,18 @@ Uint8List? floodFill(
 
   final out = Uint8List(w * h * 4); // transparent
   final visited = Uint8List(w * h);
+  final filled = Uint8List(w * h);
   final stack = <int>[sy * w + sx];
   visited[sy * w + sx] = 1;
+
+  void paint(int p) {
+    final idx = p * 4;
+    out[idx] = fR;
+    out[idx + 1] = fG;
+    out[idx + 2] = fB;
+    out[idx + 3] = fA;
+    filled[p] = 1;
+  }
 
   while (stack.isNotEmpty) {
     final p = stack.removeLast();
@@ -42,10 +69,7 @@ Uint8List? floodFill(
     if (!_within(src[idx], src[idx + 1], src[idx + 2], sr, sg, sb, tol)) {
       continue;
     }
-    out[idx] = fR;
-    out[idx + 1] = fG;
-    out[idx + 2] = fB;
-    out[idx + 3] = fA;
+    paint(p);
 
     final x = p % w, y = p ~/ w;
     if (x > 0 && visited[p - 1] == 0) {
@@ -63,6 +87,31 @@ Uint8List? floodFill(
     if (y < h - 1 && visited[p + w] == 0) {
       visited[p + w] = 1;
       stack.add(p + w);
+    }
+  }
+
+  // Soft edges: grow into the anti-aliased band around the region. See the doc
+  // comment — each ring is collected fully before being painted, so a pixel
+  // added this pass can't seed further growth until the next one.
+  for (var pass = 0; pass < edgePasses; pass++) {
+    final ring = <int>[];
+    for (var p = 0; p < w * h; p++) {
+      if (filled[p] != 0) continue;
+      final x = p % w, y = p ~/ w;
+      final touches =
+          (x > 0 && filled[p - 1] != 0) ||
+          (x < w - 1 && filled[p + 1] != 0) ||
+          (y > 0 && filled[p - w] != 0) ||
+          (y < h - 1 && filled[p + w] != 0);
+      if (!touches) continue;
+      final idx = p * 4;
+      if (_within(src[idx], src[idx + 1], src[idx + 2], sr, sg, sb, edgeTol)) {
+        ring.add(p);
+      }
+    }
+    if (ring.isEmpty) break;
+    for (final p in ring) {
+      paint(p);
     }
   }
   return out;

@@ -47,6 +47,49 @@ void main() {
     expect(px(4), [0, 0, 0, 0]);
   });
 
+  test('grows into an anti-aliased edge but not into the stroke itself', () {
+    // A stroke edge in miniature: white | white | pale pink | solid red.
+    // The pale pixel is what anti-aliasing leaves behind — too far from white
+    // to pass the normal tolerance, too pale to read as part of the stroke, so
+    // without the soft-edge pass it stays unfilled and shows as a halo.
+    const w = 4, h = 1;
+    const pale = 0xFFFFC8C8; // ~(255, 200, 200)
+    final src = _buffer(
+      w,
+      h,
+      (x, y) => switch (x) {
+        0 || 1 => _white,
+        2 => pale,
+        _ => _red,
+      },
+    );
+
+    final out = floodFill(src, w, h, 0, 0, 0xFF00FF00, 48)!;
+    Uint8List px(int x) {
+      final i = x * 4;
+      return Uint8List.fromList([out[i], out[i + 1], out[i + 2], out[i + 3]]);
+    }
+
+    expect(px(0), [0, 255, 0, 255]);
+    expect(px(1), [0, 255, 0, 255]);
+    // The anti-aliased pixel gets covered — this is the halo fix.
+    expect(px(2), [0, 255, 0, 255], reason: 'AA edge should be filled');
+    // The stroke itself is far from the seed color, so growth stops.
+    expect(px(3), [0, 0, 0, 0], reason: 'must not paint over the stroke');
+  });
+
+  test('soft edges never cross a solid one-pixel barrier', () {
+    // The growth test is against the *seed* color, not the neighbor, so even a
+    // barrier thinner than the number of passes holds.
+    const w = 5, h = 1;
+    final src = _buffer(w, h, (x, y) => x == 2 ? _black : _white);
+    final out = floodFill(src, w, h, 0, 0, _red, 48, edgePasses: 4)!;
+
+    // Far side stays untouched no matter how many growth passes run.
+    expect(out[3 * 4 + 3], 0, reason: 'barrier must not be crossed');
+    expect(out[4 * 4 + 3], 0, reason: 'barrier must not be crossed');
+  });
+
   test('returns null when the seed is already the fill color', () {
     const w = 3, h = 1;
     final src = _buffer(w, h, (x, y) => _red);
