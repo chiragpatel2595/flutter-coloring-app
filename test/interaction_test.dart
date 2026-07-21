@@ -3,45 +3,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:coloring_app/main.dart';
 
+import 'helpers.dart';
+
 void main() {
-  testWidgets('picture navigation changes the page', (tester) async {
+  testWidgets('shows a single picture with no page navigation', (tester) async {
     await tester.pumpWidget(const ColoringApp());
 
-    // Starts on Blank (app-bar title).
+    // One picture, named once in the app bar.
     expect(find.widgetWithText(AppBar, 'Blank'), findsOneWidget);
 
-    // Next -> Fish.
-    await tester.tap(find.byIcon(Icons.chevron_right));
-    await tester.pump();
-    expect(find.widgetWithText(AppBar, 'Fish'), findsOneWidget);
-
-    // Prev -> back to Blank.
-    await tester.tap(find.byIcon(Icons.chevron_left));
-    await tester.pump();
-    expect(find.widgetWithText(AppBar, 'Blank'), findsOneWidget);
-  });
-
-  testWidgets('each picture keeps its own strokes / undo state',
-      (tester) async {
-    await tester.pumpWidget(const ColoringApp());
-
-    IconButton undoBtn() => tester.widget<IconButton>(find.ancestor(
-        of: find.byIcon(Icons.undo), matching: find.byType(IconButton)));
-
-    // Draw on Blank.
-    await tester.drag(find.byType(CustomPaint).first, const Offset(40, 40));
-    await tester.pump();
-    expect(undoBtn().onPressed, isNotNull);
-
-    // Move to Fish: its board is empty, so undo is disabled again.
-    await tester.tap(find.byIcon(Icons.chevron_right));
-    await tester.pump();
-    expect(undoBtn().onPressed, isNull);
-
-    // Back to Blank: the stroke is still there.
-    await tester.tap(find.byIcon(Icons.chevron_left));
-    await tester.pump();
-    expect(undoBtn().onPressed, isNotNull);
+    // Page navigation is switched off for now, so neither arrow exists. They
+    // used to sit at the ends of the crayon tray, where they read as "scroll
+    // the crayons" rather than "change the picture".
+    expect(find.byIcon(Icons.chevron_left), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
   });
 
   testWidgets('tapping a color swatch and the eraser does not throw',
@@ -58,22 +33,36 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('brush slider updates the label', (tester) async {
+  testWidgets('picking a brush size selects it', (tester) async {
+    final semantics = tester.ensureSemantics();
     await tester.pumpWidget(const ColoringApp());
-    // Drag the slider thumb to the right.
-    await tester.drag(find.byType(Slider), const Offset(200, 0));
-    await tester.pump();
-    // Label ends in "px" and should now read a large value.
-    expect(find.textContaining('px'), findsOneWidget);
+
+    void expectSelected(String label, {required bool selected}) => expect(
+          tester.getSemantics(find.bySemanticsLabel(label)),
+          isSemantics(isSelected: selected),
+        );
+
+    // "Medium" is the default size.
+    expectSelected('Medium brush', selected: true);
+    expectSelected('Chunky brush', selected: false);
+
+    await tester.tap(find.byTooltip('Chunky'));
+    await tester.pumpAndSettle();
+
+    expectSelected('Chunky brush', selected: true);
+    expectSelected('Medium brush', selected: false);
+
+    // The new size must actually draw without error.
+    await tester.drag(find.byType(CustomPaint).first, const Offset(40, 40));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+
+    semantics.dispose();
   });
 
   IconButton undoButton(WidgetTester tester) => tester.widget<IconButton>(
       find.ancestor(
           of: find.byIcon(Icons.undo), matching: find.byType(IconButton)));
-  IconButton redoButton(WidgetTester tester) => tester.widget<IconButton>(
-      find.ancestor(
-          of: find.byIcon(Icons.redo), matching: find.byType(IconButton)));
 
   testWidgets('clear asks to confirm, then empties the board', (tester) async {
     await tester.pumpWidget(const ColoringApp());
@@ -112,17 +101,23 @@ void main() {
   testWidgets('starting a new stroke clears the redo stack', (tester) async {
     await tester.pumpWidget(const ColoringApp());
 
-    // Draw, then undo -> redo becomes available.
+    // Draw stroke A, then undo it — A is now sitting in the redo pile.
     await tester.drag(find.byType(CustomPaint).first, const Offset(40, 40));
     await tester.pump();
     await tester.tap(find.byIcon(Icons.undo));
     await tester.pump();
-    expect(redoButton(tester).onPressed, isNotNull);
 
-    // Draw a fresh stroke -> the redo history is discarded.
+    // Draw a fresh stroke B, which must discard that redo history.
     await tester.drag(find.byType(CustomPaint).first, const Offset(-30, 50));
     await tester.pump();
-    expect(redoButton(tester).onPressed, isNull);
+
+    // With no redo button to read, prove it by behaviour: redo must restore
+    // nothing, so undoing once should empty the board. If A had wrongly
+    // survived, the board would hold [B, A] and undo would still be enabled.
+    await pressRedo(tester);
+    await tester.tap(find.byIcon(Icons.undo));
+    await tester.pump();
+    expect(undoButton(tester).onPressed, isNull);
   });
 
   testWidgets('two fingers can draw at the same time without error',

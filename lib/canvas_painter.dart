@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -13,7 +14,20 @@ import 'models.dart';
 class CanvasPainter extends CustomPainter {
   final List<Layer> layers;
   final ColoringTemplate template;
-  CanvasPainter(this.layers, this.template);
+
+  /// The stroke that just finished, if one is currently playing its "pop"
+  /// animation, and how far through that animation we are (0 → 1). The pop is
+  /// purely visual: it scales the drawn width, and never touches the stored
+  /// [Stroke], so undo/redo and saving are unaffected.
+  final Stroke? popStroke;
+  final double popT;
+
+  CanvasPainter(
+    this.layers,
+    this.template, {
+    this.popStroke,
+    this.popT = 1,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -51,7 +65,7 @@ class CanvasPainter extends CustomPainter {
     final pts = [
       for (final p in s.points) Offset(p.dx * size.width, p.dy * size.height)
     ];
-    final paint = _paintFor(s);
+    final paint = _paintFor(s, _popScale(s));
 
     // Spray is a cloud of baked dots; every other brush is a line/dot.
     if (!s.erase && s.type == BrushType.spray) {
@@ -68,14 +82,28 @@ class CanvasPainter extends CustomPainter {
     }
   }
 
-  /// Builds the [Paint] for a stroke based on its brush type. The eraser
-  /// (`s.erase`) always wins — it punches through with `BlendMode.clear`
-  /// regardless of brush.
-  Paint _paintFor(Stroke s) {
+  /// How much wider to draw [s] right now — 1.0 is its normal width.
+  ///
+  /// Only the just-finished stroke pops. `sin` over one and a half turns
+  /// wobbles fat → thin → fat, and multiplying by `(1 - t)` damps that wobble
+  /// down to nothing, so the stroke springs like rubber and settles at exactly
+  /// 1.0. (A plain half-turn `sin` gives one smooth swell — correct, but far
+  /// too polite for a children's app.)
+  double _popScale(Stroke s) {
+    if (!identical(s, popStroke)) return 1;
+    final t = popT.clamp(0.0, 1.0);
+    final wobble = math.sin(t * math.pi * 3) * (1 - t);
+    return 1 + 0.5 * wobble;
+  }
+
+  /// Builds the [Paint] for a stroke based on its brush type, widened by
+  /// [scale] for the pop animation. The eraser (`s.erase`) always wins — it
+  /// punches through with `BlendMode.clear` regardless of brush.
+  Paint _paintFor(Stroke s, double scale) {
     final paint = Paint()
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..strokeWidth = s.width
+      ..strokeWidth = s.width * scale
       ..style = PaintingStyle.stroke;
 
     if (s.erase) {
@@ -102,7 +130,7 @@ class CanvasPainter extends CustomPainter {
         // dot size is a fraction of the brush (which sets the scatter radius).
         paint
           ..color = s.color.withValues(alpha: 0.45)
-          ..strokeWidth = (s.width * 0.22).clamp(2.0, 12.0);
+          ..strokeWidth = (s.width * 0.22).clamp(2.0, 12.0) * scale;
     }
     return paint;
   }

@@ -9,6 +9,14 @@ import 'models.dart';
 // centered box, so the same picture works on any screen size.
 // ---------------------------------------------------------------------------
 
+/// The one picture the app currently shows.
+///
+/// Page navigation is switched off for now, so the app opens straight onto
+/// this. The rest of [kTemplates] is deliberately left intact — bringing the
+/// pager back means wiring up navigation again, not rewriting the outlines.
+/// Point this at another entry to change which picture you get.
+ColoringTemplate get kActiveTemplate => kTemplates.first;
+
 /// The pictures you can color. Vector outlines keep the app package- and
 /// asset-free; add more templates by writing another drawer below and adding
 /// it to this list.

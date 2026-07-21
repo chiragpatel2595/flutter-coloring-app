@@ -9,7 +9,9 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'canvas_painter.dart';
 import 'color_picker.dart';
+import 'crayon.dart';
 import 'flood_fill.dart';
+import 'kid_palette.dart';
 import 'models.dart';
 import 'save_image.dart';
 import 'templates.dart';
@@ -21,10 +23,41 @@ class ColoringPage extends StatefulWidget {
   State<ColoringPage> createState() => _ColoringPageState();
 }
 
-class _ColoringPageState extends State<ColoringPage> {
-  // One board per template, so each picture remembers its own strokes.
-  late final List<Artboard> _boards =
-      List.generate(kTemplates.length, (_) => Artboard());
+class _ColoringPageState extends State<ColoringPage>
+    with SingleTickerProviderStateMixin {
+  // A single board — the app shows one picture for now. When per-picture
+  // navigation comes back this becomes a list keyed by template again, so that
+  // each picture keeps its own strokes and undo history.
+  final Artboard _board = Artboard();
+
+  // ---- "Pop" animation: the stroke you just finished briefly swells ----
+  // The controller drives a 0 → 1 value over its duration; CanvasPainter turns
+  // that into a width multiplier. Created in initState and released in
+  // dispose — an AnimationController holds a ticker that fires every frame, so
+  // leaving it undisposed would keep this screen alive after it's gone.
+  late final AnimationController _popController;
+  Stroke? _popStroke;
+
+  @override
+  void initState() {
+    super.initState();
+    _popController = AnimationController(
+      vsync: this, // SingleTickerProviderStateMixin supplies the frame clock
+      duration: const Duration(milliseconds: 320),
+    )..addStatusListener((status) {
+        // Once the pop finishes, forget the stroke so it paints at its normal
+        // width again (and so we don't hold on to it forever).
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _popStroke = null);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _popController.dispose();
+    super.dispose();
+  }
 
   final GlobalKey _canvasKey = GlobalKey();
 
@@ -33,17 +66,15 @@ class _ColoringPageState extends State<ColoringPage> {
   // instead of the second finger hijacking the first finger's line.
   final Map<int, Stroke> _active = {};
 
-  int _page = 0;
   Color _color = Colors.red;
-  double _brush = 12;
+  double _brush = kBrushSizes[1].$2; // "Medium" — must match a preset exactly,
+  // since the size picker highlights by value equality.
   bool _erasing = false;
   bool _filling = false; // paint-bucket tool active
   BrushType _brushType = BrushType.pen;
 
   // For the spray brush's random scatter (see _pointsAt).
   final math.Random _rng = math.Random();
-
-  Artboard get _board => _boards[_page];
 
   // (name, color) pairs — the name is used for tooltips and screen readers.
   static const _palette = <(String, Color)>[
@@ -104,7 +135,13 @@ class _ColoringPageState extends State<ColoringPage> {
     setState(() => stroke.points.addAll(_pointsAt(local, size)));
   }
 
-  void _endStroke(int pointer) => _active.remove(pointer);
+  void _endStroke(int pointer) {
+    final stroke = _active.remove(pointer);
+    // Nothing to celebrate for an eraser swipe — a swelling hole looks wrong.
+    if (stroke == null || stroke.erase) return;
+    setState(() => _popStroke = stroke);
+    _popController.forward(from: 0); // restart, even if a pop was mid-flight
+  }
 
   // ---- Paint bucket (flood fill) ----
 
@@ -207,10 +244,6 @@ class _ColoringPageState extends State<ColoringPage> {
     });
   }
 
-  void _goTo(int delta) => setState(() {
-        _page = (_page + delta).clamp(0, kTemplates.length - 1);
-      });
-
   /// Opens the custom color picker; the chosen color becomes active and is
   /// remembered as a new swatch.
   Future<void> _pickCustomColor() async {
@@ -245,7 +278,7 @@ class _ColoringPageState extends State<ColoringPage> {
         );
         return;
       }
-      final safeName = kTemplates[_page].name.toLowerCase().replaceAll(' ', '_');
+      final safeName = kActiveTemplate.name.toLowerCase().replaceAll(' ', '_');
       final msg = await savePng(
         byteData.buffer.asUint8List(),
         'coloring_$safeName.png',
@@ -287,18 +320,16 @@ class _ColoringPageState extends State<ColoringPage> {
         autofocus: true,
         child: Scaffold(
           appBar: AppBar(
-            title: Text(kTemplates[_page].name),
+            title: Text(kActiveTemplate.name),
             actions: [
               IconButton(
                 tooltip: 'Undo (Ctrl+Z)',
                 icon: const Icon(Icons.undo),
                 onPressed: canUndo ? _undo : null,
               ),
-              IconButton(
-                tooltip: 'Redo (Ctrl+Shift+Z)',
-                icon: const Icon(Icons.redo),
-                onPressed: canRedo ? _redo : null,
-              ),
+              // No redo button: it needs a history-stack mental model that a
+              // small child doesn't have, and it sits disabled most of the
+              // time. The keyboard shortcut below still works for grown-ups.
               IconButton(
                 tooltip: 'Clear all',
                 icon: const Icon(Icons.delete_outline),
@@ -342,10 +373,20 @@ class _ColoringPageState extends State<ColoringPage> {
                               _extendStroke(e.pointer, e.localPosition, size),
                           onPointerUp: (e) => _endStroke(e.pointer),
                           onPointerCancel: (e) => _endStroke(e.pointer),
-                          child: CustomPaint(
-                            painter:
-                                CanvasPainter(_board.layers, kTemplates[_page]),
-                            size: Size.infinite,
+                          // AnimatedBuilder rebuilds just this subtree on every
+                          // frame of the pop, so we get the animation without
+                          // calling setState 60 times a second.
+                          child: AnimatedBuilder(
+                            animation: _popController,
+                            builder: (context, _) => CustomPaint(
+                              painter: CanvasPainter(
+                                _board.layers,
+                                kActiveTemplate,
+                                popStroke: _popStroke,
+                                popT: _popController.value,
+                              ),
+                              size: Size.infinite,
+                            ),
                           ),
                         ),
                       );
@@ -364,152 +405,134 @@ class _ColoringPageState extends State<ColoringPage> {
 
   Widget _buildToolbar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      // The selected size dot scales up past its box, so the bottom padding
+      // keeps it clear of the system navigation bar.
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+      color: KidPalette.paper,
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // picture navigation
+            _crayonTray(),
+            const SizedBox(height: 8),
+            // Brushes on the left, the non-brush tools on the right. Keeping
+            // them on one row leaves more of the screen for the picture.
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                IconButton(
-                  tooltip: 'Previous picture',
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: _page == 0 ? null : () => _goTo(-1),
-                ),
-                Text(
-                  '${kTemplates[_page].name}  (${_page + 1}/${kTemplates.length})',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                IconButton(
-                  tooltip: 'Next picture',
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed:
-                      _page == kTemplates.length - 1 ? null : () => _goTo(1),
-                ),
+                Flexible(child: _brushTypeSelector()),
+                Row(children: [_bucketButton(), _eraserButton()]),
               ],
             ),
-            // Colors scroll horizontally; the tool buttons (add-color, paint
-            // bucket, eraser) stay pinned on the right so they're always
-            // reachable — even on a narrow phone where the swatches overflow.
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        for (final entry in _palette) _swatch(entry.$1, entry.$2),
-                        for (final c in _customColors)
-                          _swatch('Custom color', c),
-                      ],
-                    ),
-                  ),
-                ),
-                _addColorButton(),
-                _bucketButton(),
-                _eraserButton(),
-              ],
-            ),
-            // brush type selector
-            _brushTypeSelector(),
-            // brush size slider + a live preview of the current tool/size
-            Row(
-              children: [
-                const Icon(Icons.brush, size: 18),
-                Expanded(
-                  child: Slider(
-                    min: 2,
-                    max: 40,
-                    value: _brush,
-                    label: _brush.round().toString(),
-                    divisions: 38,
-                    onChanged: (v) => setState(() => _brush = v),
-                  ),
-                ),
-                Text('${_brush.round()}px'),
-                const SizedBox(width: 8),
-                _brushPreview(),
-              ],
-            ),
+            const SizedBox(height: 6),
+            _sizePicker(),
           ],
         ),
       ),
     );
   }
 
-  /// Icon-only segmented control for choosing the brush type. Choosing one
-  /// also turns the eraser off; while erasing, no brush is highlighted.
-  Widget _brushTypeSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+  /// The colors, drawn as crayons standing in a cardboard tray.
+  ///
+  /// Nothing but crayons lives in here. The tray scrolls horizontally, so any
+  /// button parked at its ends would be taken for a scroll control — the
+  /// picture arrows sit up in the app bar beside the name instead.
+  ///
+  /// The tray is padded at the top so the chosen crayon has room to rise into
+  /// it — no clipping, and the crayons sit on the tray floor via
+  /// [CrossAxisAlignment.end]. The "add a color" button rides at the end of the
+  /// row so new colors appear right where you'd reach for them.
+  Widget _crayonTray() {
+    return Container(
+      height: Crayon.height + Crayon.liftRoom + 16,
+      decoration: BoxDecoration(
+        color: KidPalette.kraft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: KidPalette.kraftDark, width: 2),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: SegmentedButton<BrushType>(
-          showSelectedIcon: false,
-          emptySelectionAllowed: true,
-          segments: const [
-            ButtonSegment(
-                value: BrushType.pen, icon: Icon(Icons.edit), tooltip: 'Pen'),
-            ButtonSegment(
-                value: BrushType.marker,
-                icon: Icon(Icons.brush),
-                tooltip: 'Marker'),
-            ButtonSegment(
-                value: BrushType.highlighter,
-                icon: Icon(Icons.border_color),
-                tooltip: 'Highlighter'),
-            ButtonSegment(
-                value: BrushType.spray,
-                icon: Icon(Icons.blur_on),
-                tooltip: 'Spray'),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            for (final entry in _palette)
+              Crayon(
+                name: entry.$1,
+                color: entry.$2,
+                selected: !_erasing && entry.$2 == _color,
+                onTap: () => _pickColor(entry.$2),
+              ),
+            for (final c in _customColors)
+              Crayon(
+                name: 'Custom color',
+                color: c,
+                selected: !_erasing && c == _color,
+                onTap: () => _pickColor(c),
+              ),
+            _addColorButton(),
           ],
-          selected:
-              (_erasing || _filling) ? const <BrushType>{} : {_brushType},
-          onSelectionChanged: (selection) {
-            if (selection.isEmpty) return;
-            setState(() {
-              _brushType = selection.first;
-              _erasing = false;
-              _filling = false;
-            });
-          },
         ),
       ),
     );
   }
 
-  Widget _swatch(String name, Color c) {
-    final selected = !_erasing && c == _color;
-    // Tooltip + Semantics give the color a name for hover and screen readers;
-    // InkResponse makes it keyboard-focusable and activatable (unlike a bare
-    // GestureDetector).
+  void _pickColor(Color c) => setState(() {
+        _color = c;
+        _erasing = false;
+        _filling = false;
+      });
+
+  /// The four brush sizes, shown as dots you can compare by eye.
+  Widget _sizePicker() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (final (name, size) in kBrushSizes) _sizeDot(name, size),
+      ],
+    );
+  }
+
+  Widget _sizeDot(String name, double size) {
+    final selected = _brush == size;
+    // The dot shows the real brush color, so this row doubles as the preview
+    // the old slider needed a separate swatch for. Scaled down to fit, but
+    // still ordered small → big so the comparison holds.
+    final diameter = 8 + size * 0.55;
     return Tooltip(
       message: name,
       child: Semantics(
         button: true,
         selected: selected,
-        label: '$name color',
+        label: '$name brush',
         child: InkResponse(
-          onTap: () => setState(() {
-            _color = c;
-            _erasing = false;
-            _filling = false;
-          }),
-          child: Container(
-            width: 36,
-            height: 36,
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            decoration: BoxDecoration(
-              color: c,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? Colors.black : Colors.black26,
-                width: selected ? 3 : 1,
+          onTap: () => setState(() => _brush = size),
+          radius: 30,
+          child: AnimatedScale(
+            scale: selected ? 1.15 : 1,
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.elasticOut,
+            child: Container(
+              width: 58,
+              height: 52,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? KidPalette.kraft : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: selected ? KidPalette.cocoa : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: Container(
+                width: diameter,
+                height: diameter,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _erasing ? Colors.white : _color,
+                  border: Border.all(color: KidPalette.cocoa, width: 1.5),
+                ),
               ),
             ),
           ),
@@ -518,6 +541,87 @@ class _ColoringPageState extends State<ColoringPage> {
     );
   }
 
+  /// The four brush types as separate chunky buttons.
+  ///
+  /// A [SegmentedButton] packs them into one joined pill with thin dividers —
+  /// fine for a settings screen, but the segments are small and hard to hit.
+  /// Separate buttons give each brush its own generous target.
+  Widget _brushTypeSelector() {
+    const brushes = <(String, IconData, BrushType)>[
+      ('Pen', Icons.edit, BrushType.pen),
+      ('Marker', Icons.brush, BrushType.marker),
+      ('Highlighter', Icons.border_color, BrushType.highlighter),
+      ('Spray', Icons.blur_on, BrushType.spray),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final (name, icon, type) in brushes)
+            _chunkyButton(
+              tooltip: name,
+              semanticLabel: '$name brush',
+              icon: icon,
+              // While erasing or filling, no brush is highlighted.
+              selected: !_erasing && !_filling && _brushType == type,
+              onTap: () => setState(() {
+                _brushType = type;
+                _erasing = false;
+                _filling = false;
+              }),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// A big rounded tool button. Selected ones fill with cardboard and spring
+  /// up a little, matching how a picked crayon behaves.
+  Widget _chunkyButton({
+    required String tooltip,
+    required String semanticLabel,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+    Color? fill,
+    Color? iconColor,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: semanticLabel,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 30,
+          child: AnimatedScale(
+            scale: selected ? 1.1 : 1,
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.elasticOut,
+            child: Container(
+              width: 52,
+              height: 52,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: fill ?? (selected ? KidPalette.kraft : Colors.white),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: selected ? KidPalette.cocoa : KidPalette.cocoaSoft,
+                  width: selected ? 3 : 2,
+                ),
+              ),
+              child: Icon(icon, size: 26, color: iconColor ?? KidPalette.cocoa),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// An empty rainbow slot at the end of the tray — "mix your own crayon".
+  /// Sized to match a crayon so the row reads as one set of choices.
   Widget _addColorButton() {
     return Tooltip(
       message: 'Custom color',
@@ -526,117 +630,62 @@ class _ColoringPageState extends State<ColoringPage> {
         label: 'Add a custom color',
         child: InkResponse(
           onTap: _pickCustomColor,
-          child: Container(
-            width: 36,
-            height: 36,
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            decoration: BoxDecoration(
-              gradient: const SweepGradient(colors: [
-                Colors.red,
-                Colors.yellow,
-                Colors.green,
-                Colors.cyan,
-                Colors.blue,
-                Colors.purple,
-                Colors.red,
-              ]),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.black26),
+          radius: Crayon.width,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            child: Container(
+              width: Crayon.width,
+              height: Crayon.height * 0.72,
+              decoration: BoxDecoration(
+                gradient: const SweepGradient(colors: [
+                  Colors.red,
+                  Colors.yellow,
+                  Colors.green,
+                  Colors.cyan,
+                  Colors.blue,
+                  Colors.purple,
+                  Colors.red,
+                ]),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: KidPalette.cocoa, width: 1.5),
+              ),
+              child: const Icon(Icons.add, size: 24, color: Colors.white),
             ),
-            child: const Icon(Icons.add, size: 18, color: Colors.white),
           ),
         ),
       ),
     );
   }
 
-  /// Paint-bucket toggle. The fill color is the current [_color].
+  /// Paint-bucket toggle. The button fills with the current [_color] so you can
+  /// see what tapping the picture would pour on.
   Widget _bucketButton() {
-    return Tooltip(
-      message: 'Fill (paint bucket)',
-      child: Semantics(
-        button: true,
-        selected: _filling,
-        label: 'Paint bucket fill',
-        child: InkResponse(
-          onTap: () => setState(() {
-            _filling = true;
-            _erasing = false;
-          }),
-          child: Container(
-            width: 36,
-            height: 36,
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            decoration: BoxDecoration(
-              color: _color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _filling ? Colors.black : Colors.black26,
-                width: _filling ? 3 : 1,
-              ),
-            ),
-            child: Icon(Icons.format_color_fill,
-                size: 18,
-                color: _color.computeLuminance() > 0.5
-                    ? Colors.black
-                    : Colors.white),
-          ),
-        ),
-      ),
+    return _chunkyButton(
+      tooltip: 'Fill (paint bucket)',
+      semanticLabel: 'Paint bucket fill',
+      icon: Icons.format_color_fill,
+      selected: _filling,
+      fill: _color,
+      // Keep the icon legible on both a pale yellow and a near-black fill.
+      iconColor:
+          _color.computeLuminance() > 0.5 ? KidPalette.cocoa : Colors.white,
+      onTap: () => setState(() {
+        _filling = true;
+        _erasing = false;
+      }),
     );
   }
 
   Widget _eraserButton() {
-    return Tooltip(
-      message: 'Eraser',
-      child: Semantics(
-        button: true,
-        selected: _erasing,
-        label: 'Eraser',
-        child: InkResponse(
-          onTap: () => setState(() {
-            _erasing = true;
-            _filling = false;
-          }),
-          child: Container(
-            width: 36,
-            height: 36,
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _erasing ? Colors.black : Colors.black26,
-                width: _erasing ? 3 : 1,
-              ),
-            ),
-            child: const Icon(Icons.cleaning_services, size: 18),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// A dot showing the current brush size and color (or a hollow circle for
-  /// the eraser), so you can see the tool before touching the canvas.
-  Widget _brushPreview() {
-    return Semantics(
-      label: _erasing ? 'Eraser preview' : 'Brush preview',
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Center(
-          child: Container(
-            width: _brush,
-            height: _brush,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _erasing ? Colors.white : _color,
-              border: Border.all(color: Colors.black45),
-            ),
-          ),
-        ),
-      ),
+    return _chunkyButton(
+      tooltip: 'Eraser',
+      semanticLabel: 'Eraser',
+      icon: Icons.cleaning_services,
+      selected: _erasing,
+      onTap: () => setState(() {
+        _erasing = true;
+        _filling = false;
+      }),
     );
   }
 }

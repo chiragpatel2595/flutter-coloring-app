@@ -40,21 +40,29 @@ The app is split into small, focused files (was one big `main.dart`):
   `ColoringTemplate` (name + optional `OutlineDrawer`), `Artboard` (per-picture
   `strokes` + `redo`).
 - `lib/templates.dart` — the `kTemplates` list and vector outline drawers
-  (fish / flower / house / star / heart / sun / tree / car) + helpers.
+  (fish / flower / house / star / heart / sun / tree / car) + helpers, plus
+  `kActiveTemplate`: the one picture shown while navigation is switched off.
 - `lib/canvas_painter.dart` — `CanvasPainter` (`CustomPainter`): background → outline →
   strokes in a `saveLayer` (real `BlendMode.clear` eraser).
 - `lib/color_picker.dart` — `showColorPickerDialog`: a package-free HSV color picker
   (hue/saturation/brightness sliders + live preview).
+- `lib/kid_palette.dart` — the chrome colors (paper / kraft / cocoa) and `kBrushSizes`,
+  the four named brush presets that replaced the px slider.
+- `lib/crayon.dart` — `Crayon`: one drawable crayon (waxy tip, body, paper wrapper +
+  stripes) that lifts and tilts when selected. The app's signature element.
 - `lib/flood_fill.dart` — pure `floodFill()` over a raw RGBA buffer (no engine), so the
   paint-bucket algorithm is unit-testable on its own.
 - `lib/save_image.dart` + `save_image_stub.dart` + `save_image_web.dart` — platform-
   conditional PNG save (`savePng`). Web triggers a browser download via `dart:html`;
   other platforms return a "not wired up" message. No packages.
 - `test/widget_test.dart` — smoke test + undo/redo enable-state test
-- `test/interaction_test.dart` — navigation, per-picture strokes, clear-confirm,
-  redo-cleared-on-new-stroke, multi-touch (two pointers)
+- `test/interaction_test.dart` — single-page (no nav arrows), brush-size selection,
+  clear-confirm, redo-cleared-on-new-stroke, multi-touch (two pointers)
 - `test/render_test.dart` — pixel-level guard: captures the canvas and asserts each
   stroke actually repaints (catches `shouldRepaint`-style "nothing draws" regressions)
+- `test/animation_test.dart` — drives the clock by hand to check the finish-stroke
+  "pop" swells mid-animation, settles back, and stops (and that erasing doesn't pop)
+- `test/helpers.dart` — shared `pressRedo()` (Ctrl+Shift+Z), since redo has no button
 - Standard Flutter platform folders: `android/`, `ios/`, `web/`, `macos/`, etc.
 
 ## How drawing works
@@ -75,22 +83,47 @@ they punch back to the outline/background (a *real* eraser, not white paint).
   Pen is a solid line; marker and highlighter are semi-transparent flat lines; spray is
   an airbrush whose scattered dots are *baked* at draw time (in `_pointsAt`) so it stays
   stable across repaints. `CanvasPainter._paintFor` maps each type to its `Paint`.
-- **Colors** — 8 preset swatches plus a custom HSV picker (`color_picker.dart`); picked
-  colors are remembered as extra swatches.
+- **Colors** — 8 preset crayons in a cardboard tray, plus a rainbow "mix your own" slot
+  that opens the custom HSV picker (`color_picker.dart`); picked colors are remembered
+  as extra crayons. The chosen crayon rises out of the tray and tilts (`Curves.elasticOut`)
+  instead of getting a selection ring — position and angle read faster than a border.
+  Each crayon reserves `Crayon.liftRoom` above itself so the rise isn't clipped by the
+  scrolling tray.
+- **Brush size** — four preset dots (`kBrushSizes`), not a slider. The dot shows the real
+  brush color at a comparable size, so it doubles as the preview and needs no "12px"
+  label — a child picks by looking, not by reading.
 - **Paint bucket** — a picture is an ordered list of `Layer`s (`Stroke` | `Fill`), so
   fills and strokes share one z-order and one undo stack. Tapping with the bucket
   rasterizes the canvas, runs the pure `floodFill()`, bakes the result to a `Fill`
   (`ui.Image`), and adds it as a layer. `Fill` images are disposed when discarded
   (clear, or a redo pile dropped by a new action).
+- **Stroke "pop"** — lifting your finger briefly swells the stroke you just drew, then
+  settles it back. An `AnimationController` on `_ColoringPageState` (created in
+  `initState`, released in `dispose`) drives a 0→1 value; an `AnimatedBuilder` around
+  the `CustomPaint` rebuilds only the canvas each frame, and `CanvasPainter._popScale`
+  turns that value into a width multiplier — a damped wobble (`sin` over 1.5 turns times
+  `(1 - t)`) so the line springs like rubber and settles at exactly 1.0. It's purely
+  visual — the stored `Stroke` is untouched, so undo/redo and save are unaffected.
+  Eraser strokes don't pop.
 - **Undo/redo** — per picture: undo moves the last stroke to `redo`, redo moves it back;
   a new stroke clears `redo`. Keyboard shortcuts: Ctrl/Cmd+Z undo, add Shift (or Ctrl+Y)
-  to redo. **Clear** empties both and can't be undone, so it asks for confirmation first.
-- **Multiple pictures** — each `ColoringTemplate` has its own `_Artboard`, so switching
-  with the prev/next arrows preserves each picture's artwork.
+  to redo. **There is no redo button** — it needs a history-stack mental model a small
+  child doesn't have, and sat disabled most of the time; the keyboard path (and so the
+  only way to test redo, see `test/helpers.dart`) remains for grown-ups. **Clear** empties
+  both and can't be undone, so it asks for confirmation first.
+- **One picture (for now)** — page navigation is switched off. `kActiveTemplate`
+  (`templates.dart`) picks the single template shown, and `_ColoringPageState` holds one
+  `Artboard` instead of a list. The other eight outline drawers are still in
+  `kTemplates`, untouched, so restoring the pager is wiring, not rewriting.
+  When it comes back, the arrows must **not** sit at the ends of the crayon tray —
+  arrows either side of a horizontally scrolling row read as "scroll this row", so they
+  looked like crayon controls. Put them beside the picture's *name*.
 - **Save** — a `RepaintBoundary` around the canvas is captured to a PNG and passed to
   `savePng`. Disabled until something is drawn.
-- **Accessibility** — swatches/eraser are `InkResponse` + `Tooltip` + `Semantics`
-  (named, focusable, activatable). A brush-size preview dot sits by the slider.
+- **Accessibility** — crayons, sizes, brushes and tools are all `InkResponse` +
+  `Tooltip` + `Semantics` (named, focusable, activatable, and `selected:` set so screen
+  readers announce the current choice — which is also how the size test asserts state).
+  Touch targets are 52px+ throughout, since small children aim coarsely.
 
 ## Conventions
 
@@ -103,8 +136,8 @@ they punch back to the outline/background (a *real* eraser, not white paint).
 
 ## Ideas / next steps
 
-Done: undo/redo (+ keyboard shortcuts), vector outline backgrounds (9 pictures) with
-navigation, web PNG save (real `BlendMode.clear` eraser), multi-touch drawing,
+Done: undo/redo (+ keyboard shortcuts), vector outline backgrounds (9 drawers, one
+shown), web PNG save (real `BlendMode.clear` eraser), multi-touch drawing,
 resize-safe normalized strokes, clear-confirmation, accessible swatches, brush preview,
 a custom HSV color picker, brush types (pen/marker/highlighter/spray), a paint-bucket
 flood fill (layer model + pure algorithm), and a modular file layout with a pixel-level
