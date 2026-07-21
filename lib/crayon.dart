@@ -61,8 +61,9 @@ class Crayon extends StatelessWidget {
                 // elasticOut overshoots and springs back, so the crayon doesn't
                 // just move — it hops. Curves.easeOut would feel like a menu.
                 child: AnimatedSlide(
-                  offset:
-                      selected ? const Offset(0, -_liftFraction) : Offset.zero,
+                  offset: selected
+                      ? const Offset(0, -_liftFraction)
+                      : Offset.zero,
                   duration: const Duration(milliseconds: 450),
                   curve: Curves.elasticOut,
                   child: AnimatedRotation(

@@ -16,12 +16,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// or left the stroke permanently fatter.
 void main() {
   RenderRepaintBoundary boundary(WidgetTester tester) =>
-      tester.renderObject<RenderRepaintBoundary>(find
-          .ancestor(
-            of: find.byType(CustomPaint).first,
-            matching: find.byType(RepaintBoundary),
-          )
-          .first);
+      tester.renderObject<RenderRepaintBoundary>(
+        find
+            .ancestor(
+              of: find.byType(CustomPaint).first,
+              matching: find.byType(RepaintBoundary),
+            )
+            .first,
+      );
 
   Future<Uint8List> snapshot(WidgetTester tester) async {
     final bytes = await tester.runAsync(() async {
@@ -53,14 +55,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     final settled = await snapshot(tester);
 
-    expect(listEquals(midPop, settled), isFalse,
-        reason: 'the stroke should be visibly wider mid-pop than once settled');
+    expect(
+      listEquals(midPop, settled),
+      isFalse,
+      reason: 'the stroke should be visibly wider mid-pop than once settled',
+    );
 
     // The animation must actually stop — pumping further changes nothing.
     await tester.pump(const Duration(milliseconds: 400));
     final stillSettled = await snapshot(tester);
-    expect(listEquals(settled, stillSettled), isTrue,
-        reason: 'the pop should finish, not keep animating forever');
+    expect(
+      listEquals(settled, stillSettled),
+      isTrue,
+      reason: 'the pop should finish, not keep animating forever',
+    );
   });
 
   testWidgets('erasing does not pop', (tester) async {
@@ -82,7 +90,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     final later = await snapshot(tester);
 
-    expect(listEquals(justAfter, later), isTrue,
-        reason: 'an eraser stroke should not animate');
+    expect(
+      listEquals(justAfter, later),
+      isTrue,
+      reason: 'an eraser stroke should not animate',
+    );
   });
 }

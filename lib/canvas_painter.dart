@@ -22,12 +22,7 @@ class CanvasPainter extends CustomPainter {
   final Stroke? popStroke;
   final double popT;
 
-  CanvasPainter(
-    this.layers,
-    this.template, {
-    this.popStroke,
-    this.popT = 1,
-  });
+  CanvasPainter(this.layers, this.template, {this.popStroke, this.popT = 1});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -50,7 +45,11 @@ class CanvasPainter extends CustomPainter {
           canvas.drawImageRect(
             f.image,
             Rect.fromLTWH(
-                0, 0, f.image.width.toDouble(), f.image.height.toDouble()),
+              0,
+              0,
+              f.image.width.toDouble(),
+              f.image.height.toDouble(),
+            ),
             bounds,
             Paint(),
           );
@@ -63,7 +62,7 @@ class CanvasPainter extends CustomPainter {
     // Points are stored normalized (0..1); scale them back to pixels for the
     // current canvas size.
     final pts = [
-      for (final p in s.points) Offset(p.dx * size.width, p.dy * size.height)
+      for (final p in s.points) Offset(p.dx * size.width, p.dy * size.height),
     ];
     final paint = _paintFor(s, _popScale(s));
 

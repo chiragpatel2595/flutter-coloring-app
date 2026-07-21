@@ -70,6 +70,4 @@ Uint8List? floodFill(
 
 /// True if RGB (1) and (2) are within [tol] on every channel.
 bool _within(int r1, int g1, int b1, int r2, int g2, int b2, int tol) =>
-    (r1 - r2).abs() <= tol &&
-    (g1 - g2).abs() <= tol &&
-    (b1 - b2).abs() <= tol;
+    (r1 - r2).abs() <= tol && (g1 - g2).abs() <= tol && (b1 - b2).abs() <= tol;

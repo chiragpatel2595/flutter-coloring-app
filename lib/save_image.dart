@@ -3,7 +3,8 @@ import 'dart:typed_data';
 // Conditional import: use the web implementation when dart:html is available
 // (i.e. when compiled for the web), otherwise fall back to the stub.
 import 'save_image_stub.dart'
-    if (dart.library.html) 'save_image_web.dart' as platform;
+    if (dart.library.html) 'save_image_web.dart'
+    as platform;
 
 /// Saves [pngBytes] under [filename] using whatever mechanism the current
 /// platform supports, returning a short status message to show the user.

@@ -61,8 +61,11 @@ void main() {
     // Every pixel should now be opaque red.
     for (var p = 0; p < w * h; p++) {
       final i = p * 4;
-      expect([out[i], out[i + 1], out[i + 2], out[i + 3]], [255, 0, 0, 255],
-          reason: 'pixel $p');
+      expect(
+        [out[i], out[i + 1], out[i + 2], out[i + 3]],
+        [255, 0, 0, 255],
+        reason: 'pixel $p',
+      );
     }
   });
 }

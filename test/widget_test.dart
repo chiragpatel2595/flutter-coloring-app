@@ -6,8 +6,9 @@ import 'package:coloring_app/main.dart';
 import 'helpers.dart';
 
 void main() {
-  testWidgets('app renders the coloring page with its tools',
-      (WidgetTester tester) async {
+  testWidgets('app renders the coloring page with its tools', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const ColoringApp());
 
     // Core tools are present. Brush size is four preset dots, not a slider.
@@ -25,12 +26,17 @@ void main() {
     expect(find.textContaining('1/9'), findsNothing);
   });
 
-  testWidgets('undo enables with strokes, and Ctrl+Shift+Z redoes',
-      (WidgetTester tester) async {
+  testWidgets('undo enables with strokes, and Ctrl+Shift+Z redoes', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const ColoringApp());
 
-    IconButton undoBtn() => tester.widget<IconButton>(find.ancestor(
-        of: find.byIcon(Icons.undo), matching: find.byType(IconButton)));
+    IconButton undoBtn() => tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.undo),
+        matching: find.byType(IconButton),
+      ),
+    );
 
     // Nothing drawn yet.
     expect(undoBtn().onPressed, isNull);

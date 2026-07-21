@@ -19,8 +19,9 @@ void main() {
     expect(find.byIcon(Icons.chevron_right), findsNothing);
   });
 
-  testWidgets('tapping a color swatch and the eraser does not throw',
-      (tester) async {
+  testWidgets('tapping a color swatch and the eraser does not throw', (
+    tester,
+  ) async {
     await tester.pumpWidget(const ColoringApp());
 
     // The eraser is the circle carrying the cleaning-services icon.
@@ -38,9 +39,9 @@ void main() {
     await tester.pumpWidget(const ColoringApp());
 
     void expectSelected(String label, {required bool selected}) => expect(
-          tester.getSemantics(find.bySemanticsLabel(label)),
-          isSemantics(isSelected: selected),
-        );
+      tester.getSemantics(find.bySemanticsLabel(label)),
+      isSemantics(isSelected: selected),
+    );
 
     // "Medium" is the default size.
     expectSelected('Medium brush', selected: true);
@@ -61,8 +62,11 @@ void main() {
   });
 
   IconButton undoButton(WidgetTester tester) => tester.widget<IconButton>(
-      find.ancestor(
-          of: find.byIcon(Icons.undo), matching: find.byType(IconButton)));
+    find.ancestor(
+      of: find.byIcon(Icons.undo),
+      matching: find.byType(IconButton),
+    ),
+  );
 
   testWidgets('clear asks to confirm, then empties the board', (tester) async {
     await tester.pumpWidget(const ColoringApp());
@@ -120,8 +124,9 @@ void main() {
     expect(undoButton(tester).onPressed, isNull);
   });
 
-  testWidgets('two fingers can draw at the same time without error',
-      (tester) async {
+  testWidgets('two fingers can draw at the same time without error', (
+    tester,
+  ) async {
     await tester.pumpWidget(const ColoringApp());
     final center = tester.getCenter(find.byType(CustomPaint).first);
 
@@ -175,8 +180,12 @@ void main() {
 
     // Nudge the hue slider so a distinct custom color is chosen.
     await tester.drag(
-      find.descendant(
-          of: find.byType(AlertDialog), matching: find.byType(Slider)).first,
+      find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(Slider),
+          )
+          .first,
       const Offset(60, 0),
     );
     await tester.pump();

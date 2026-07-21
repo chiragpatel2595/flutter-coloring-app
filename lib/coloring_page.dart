@@ -41,16 +41,18 @@ class _ColoringPageState extends State<ColoringPage>
   @override
   void initState() {
     super.initState();
-    _popController = AnimationController(
-      vsync: this, // SingleTickerProviderStateMixin supplies the frame clock
-      duration: const Duration(milliseconds: 320),
-    )..addStatusListener((status) {
-        // Once the pop finishes, forget the stroke so it paints at its normal
-        // width again (and so we don't hold on to it forever).
-        if (status == AnimationStatus.completed && mounted) {
-          setState(() => _popStroke = null);
-        }
-      });
+    _popController =
+        AnimationController(
+          vsync:
+              this, // SingleTickerProviderStateMixin supplies the frame clock
+          duration: const Duration(milliseconds: 320),
+        )..addStatusListener((status) {
+          // Once the pop finishes, forget the stroke so it paints at its normal
+          // width again (and so we don't hold on to it forever).
+          if (status == AnimationStatus.completed && mounted) {
+            setState(() => _popStroke = null);
+          }
+        });
   }
 
   @override
@@ -96,9 +98,9 @@ class _ColoringPageState extends State<ColoringPage>
   /// Turns a pixel position into a 0..1 fraction of the canvas so strokes
   /// scale with the canvas on resize. See [Stroke].
   Offset _normalize(Offset p, Size size) => Offset(
-        size.width == 0 ? 0 : p.dx / size.width,
-        size.height == 0 ? 0 : p.dy / size.height,
-      );
+    size.width == 0 ? 0 : p.dx / size.width,
+    size.height == 0 ? 0 : p.dy / size.height,
+  );
 
   /// The point(s) to add for a touch at [local]. Most brushes add a single
   /// point; the spray brush bakes a small burst of scattered points around it
@@ -116,18 +118,18 @@ class _ColoringPageState extends State<ColoringPage>
   }
 
   void _startStroke(int pointer, Offset local, Size size) => setState(() {
-        _clearRedo(); // a fresh stroke invalidates the redo history
-        final stroke = Stroke(
-          // The eraser ignores brush type; store pen so it paints a plain line.
-          type: _erasing ? BrushType.pen : _brushType,
-          color: _color,
-          width: _brush,
-          erase: _erasing,
-          points: _pointsAt(local, size),
-        );
-        _active[pointer] = stroke;
-        _board.layers.add(stroke);
-      });
+    _clearRedo(); // a fresh stroke invalidates the redo history
+    final stroke = Stroke(
+      // The eraser ignores brush type; store pen so it paints a plain line.
+      type: _erasing ? BrushType.pen : _brushType,
+      color: _color,
+      width: _brush,
+      erase: _erasing,
+      points: _pointsAt(local, size),
+    );
+    _active[pointer] = stroke;
+    _board.layers.add(stroke);
+  });
 
   void _extendStroke(int pointer, Offset local, Size size) {
     final stroke = _active[pointer];
@@ -186,23 +188,28 @@ class _ColoringPageState extends State<ColoringPage>
   Future<ui.Image> _decodePixels(Uint8List rgba, int w, int h) {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
-        rgba, w, h, ui.PixelFormat.rgba8888, completer.complete);
+      rgba,
+      w,
+      h,
+      ui.PixelFormat.rgba8888,
+      completer.complete,
+    );
     return completer.future;
   }
 
   // ---- Toolbar actions ----
 
   void _undo() => setState(() {
-        if (_board.layers.isNotEmpty) {
-          _board.redo.add(_board.layers.removeLast());
-        }
-      });
+    if (_board.layers.isNotEmpty) {
+      _board.redo.add(_board.layers.removeLast());
+    }
+  });
 
   void _redo() => setState(() {
-        if (_board.redo.isNotEmpty) {
-          _board.layers.add(_board.redo.removeLast());
-        }
-      });
+    if (_board.redo.isNotEmpty) {
+      _board.layers.add(_board.redo.removeLast());
+    }
+  });
 
   /// Empties the redo history, disposing any fill images in it (they can't be
   /// reached again, so free their native memory).
@@ -221,7 +228,8 @@ class _ColoringPageState extends State<ColoringPage>
       builder: (ctx) => AlertDialog(
         title: const Text('Clear picture?'),
         content: const Text(
-            "This erases everything on this page and can't be undone."),
+          "This erases everything on this page and can't be undone.",
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -267,8 +275,9 @@ class _ColoringPageState extends State<ColoringPage>
     final messenger = ScaffoldMessenger.of(context);
     final pixelRatio = MediaQuery.of(context).devicePixelRatio;
     try {
-      final boundary = _canvasKey.currentContext!.findRenderObject()
-          as RenderRepaintBoundary;
+      final boundary =
+          _canvasKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
       final image = await boundary.toImage(pixelRatio: pixelRatio);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
@@ -304,12 +313,18 @@ class _ColoringPageState extends State<ColoringPage>
         const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
           if (canUndo) _undo();
         },
-        const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
-            () {
+        const SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          control: true,
+          shift: true,
+        ): () {
           if (canRedo) _redo();
         },
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
-            () {
+        const SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          meta: true,
+          shift: true,
+        ): () {
           if (canRedo) _redo();
         },
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
@@ -479,18 +494,16 @@ class _ColoringPageState extends State<ColoringPage>
   }
 
   void _pickColor(Color c) => setState(() {
-        _color = c;
-        _erasing = false;
-        _filling = false;
-      });
+    _color = c;
+    _erasing = false;
+    _filling = false;
+  });
 
   /// The four brush sizes, shown as dots you can compare by eye.
   Widget _sizePicker() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        for (final (name, size) in kBrushSizes) _sizeDot(name, size),
-      ],
+      children: [for (final (name, size) in kBrushSizes) _sizeDot(name, size)],
     );
   }
 
@@ -637,15 +650,17 @@ class _ColoringPageState extends State<ColoringPage>
               width: Crayon.width,
               height: Crayon.height * 0.72,
               decoration: BoxDecoration(
-                gradient: const SweepGradient(colors: [
-                  Colors.red,
-                  Colors.yellow,
-                  Colors.green,
-                  Colors.cyan,
-                  Colors.blue,
-                  Colors.purple,
-                  Colors.red,
-                ]),
+                gradient: const SweepGradient(
+                  colors: [
+                    Colors.red,
+                    Colors.yellow,
+                    Colors.green,
+                    Colors.cyan,
+                    Colors.blue,
+                    Colors.purple,
+                    Colors.red,
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: KidPalette.cocoa, width: 1.5),
               ),
@@ -667,8 +682,9 @@ class _ColoringPageState extends State<ColoringPage>
       selected: _filling,
       fill: _color,
       // Keep the icon legible on both a pale yellow and a near-black fill.
-      iconColor:
-          _color.computeLuminance() > 0.5 ? KidPalette.cocoa : Colors.white,
+      iconColor: _color.computeLuminance() > 0.5
+          ? KidPalette.cocoa
+          : Colors.white,
       onTap: () => setState(() {
         _filling = true;
         _erasing = false;

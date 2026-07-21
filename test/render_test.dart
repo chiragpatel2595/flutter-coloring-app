@@ -19,18 +19,19 @@ void main() {
     // The keyed RepaintBoundary that wraps the canvas is the nearest
     // RepaintBoundary ancestor of the drawing CustomPaint.
     RenderRepaintBoundary boundary() =>
-        tester.renderObject<RenderRepaintBoundary>(find
-            .ancestor(
-              of: find.byType(CustomPaint).first,
-              matching: find.byType(RepaintBoundary),
-            )
-            .first);
+        tester.renderObject<RenderRepaintBoundary>(
+          find
+              .ancestor(
+                of: find.byType(CustomPaint).first,
+                matching: find.byType(RepaintBoundary),
+              )
+              .first,
+        );
 
     Future<Uint8List> snapshot() async {
       final bytes = await tester.runAsync(() async {
         final image = await boundary().toImage();
-        final data =
-            await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
         image.dispose();
         return data!.buffer.asUint8List();
       });
@@ -43,8 +44,11 @@ void main() {
     await tester.drag(find.byType(CustomPaint).first, const Offset(80, 80));
     await tester.pump();
     final afterFirst = await snapshot();
-    expect(listEquals(blank, afterFirst), isFalse,
-        reason: 'the first stroke must draw something');
+    expect(
+      listEquals(blank, afterFirst),
+      isFalse,
+      reason: 'the first stroke must draw something',
+    );
 
     // A second, separate stroke must ALSO change pixels. This is precisely
     // what the broken shouldRepaint regressed: the canvas stopped repainting
@@ -52,7 +56,10 @@ void main() {
     await tester.drag(find.byType(CustomPaint).first, const Offset(-80, 60));
     await tester.pump();
     final afterSecond = await snapshot();
-    expect(listEquals(afterFirst, afterSecond), isFalse,
-        reason: 'a later stroke must repaint the canvas, not just the first');
+    expect(
+      listEquals(afterFirst, afterSecond),
+      isFalse,
+      reason: 'a later stroke must repaint the canvas, not just the first',
+    );
   });
 }

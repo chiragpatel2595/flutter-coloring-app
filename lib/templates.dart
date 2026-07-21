@@ -54,7 +54,10 @@ void drawFish(Canvas canvas, Size size) {
   final b = _box(size);
   final cy = b.center.dy;
   final body = Rect.fromCenter(
-      center: b.center, width: b.width * 0.8, height: b.height * 0.5);
+    center: b.center,
+    width: b.width * 0.8,
+    height: b.height * 0.5,
+  );
   canvas.drawOval(body, p);
   // tail fin
   final tail = Path()
@@ -65,7 +68,10 @@ void drawFish(Canvas canvas, Size size) {
   canvas.drawPath(tail, p);
   // eye
   canvas.drawCircle(
-      Offset(body.left + b.width * 0.18, cy - b.height * 0.06), b.width * 0.03, p);
+    Offset(body.left + b.width * 0.18, cy - b.height * 0.06),
+    b.width * 0.03,
+    p,
+  );
 }
 
 void drawFlower(Canvas canvas, Size size) {
@@ -77,11 +83,18 @@ void drawFlower(Canvas canvas, Size size) {
   for (var i = 0; i < 6; i++) {
     final a = i * math.pi / 3;
     canvas.drawCircle(
-        Offset(c.dx + ringR * math.cos(a), c.dy + ringR * math.sin(a)), petalR, p);
+      Offset(c.dx + ringR * math.cos(a), c.dy + ringR * math.sin(a)),
+      petalR,
+      p,
+    );
   }
   canvas.drawCircle(c, petalR, p); // flower center
   // stem + leaf
-  canvas.drawLine(Offset(c.dx, c.dy + ringR + petalR), Offset(c.dx, b.bottom), p);
+  canvas.drawLine(
+    Offset(c.dx, c.dy + ringR + petalR),
+    Offset(c.dx, b.bottom),
+    p,
+  );
   canvas.drawOval(
     Rect.fromCenter(
       center: Offset(c.dx + b.width * 0.1, b.bottom - b.height * 0.15),
@@ -97,7 +110,11 @@ void drawHouse(Canvas canvas, Size size) {
   final b = _box(size);
   final wallTop = b.top + b.height * 0.4;
   final wall = Rect.fromLTRB(
-      b.left + b.width * 0.1, wallTop, b.right - b.width * 0.1, b.bottom);
+    b.left + b.width * 0.1,
+    wallTop,
+    b.right - b.width * 0.1,
+    b.bottom,
+  );
   canvas.drawRect(wall, p);
   // roof
   final roof = Path()
@@ -108,14 +125,22 @@ void drawHouse(Canvas canvas, Size size) {
   canvas.drawPath(roof, p);
   // door
   canvas.drawRect(
-    Rect.fromLTWH(b.center.dx - b.width * 0.08, b.bottom - b.height * 0.22,
-        b.width * 0.16, b.height * 0.22),
+    Rect.fromLTWH(
+      b.center.dx - b.width * 0.08,
+      b.bottom - b.height * 0.22,
+      b.width * 0.16,
+      b.height * 0.22,
+    ),
     p,
   );
   // window
   canvas.drawRect(
-    Rect.fromLTWH(wall.left + b.width * 0.08, wallTop + b.height * 0.06,
-        b.width * 0.14, b.height * 0.12),
+    Rect.fromLTWH(
+      wall.left + b.width * 0.08,
+      wallTop + b.height * 0.06,
+      b.width * 0.14,
+      b.height * 0.12,
+    ),
     p,
   );
 }
@@ -153,7 +178,13 @@ void drawHeart(Canvas canvas, Size size) {
     ..cubicTo(b.left, b.center.dy, b.left + b.width * 0.05, b.top, cx, topY)
     // right lobe
     ..cubicTo(
-        b.right - b.width * 0.05, b.top, b.right, b.center.dy, cx, bottomY)
+      b.right - b.width * 0.05,
+      b.top,
+      b.right,
+      b.center.dy,
+      cx,
+      bottomY,
+    )
     ..close();
   canvas.drawPath(path, p);
 }
