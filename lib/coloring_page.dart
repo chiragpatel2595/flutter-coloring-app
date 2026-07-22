@@ -16,6 +16,14 @@ import 'models.dart';
 import 'save_image.dart';
 import 'templates.dart';
 
+/// What the app bar says.
+///
+/// Deliberately *not* the template's name. With one picture that read "Blank" —
+/// a developer's word for "no template", meaningless to a child and unreadable
+/// to a pre-reader anyway. An invitation works better than a label. The
+/// template name still drives the saved file name (`coloring_blank.png`).
+const kAppTitle = "Let's color!";
+
 class ColoringPage extends StatefulWidget {
   const ColoringPage({super.key});
 
@@ -343,7 +351,7 @@ class _ColoringPageState extends State<ColoringPage>
         autofocus: true,
         child: Scaffold(
           appBar: AppBar(
-            title: Text(kActiveTemplate.name),
+            title: const Text(kAppTitle),
             actions: [
               IconButton(
                 tooltip: 'Undo (Ctrl+Z)',

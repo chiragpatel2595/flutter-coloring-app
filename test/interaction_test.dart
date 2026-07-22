@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:coloring_app/coloring_page.dart';
 import 'package:coloring_app/main.dart';
 
 import 'helpers.dart';
@@ -9,8 +10,8 @@ void main() {
   testWidgets('shows a single picture with no page navigation', (tester) async {
     await tester.pumpWidget(const ColoringApp());
 
-    // One picture, named once in the app bar.
-    expect(find.widgetWithText(AppBar, 'Blank'), findsOneWidget);
+    // One picture, and the app bar greets rather than names it.
+    expect(find.widgetWithText(AppBar, kAppTitle), findsOneWidget);
 
     // Page navigation is switched off for now, so neither arrow exists. They
     // used to sit at the ends of the crayon tray, where they read as "scroll

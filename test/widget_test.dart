@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:coloring_app/coloring_page.dart';
 import 'package:coloring_app/main.dart';
 
 import 'helpers.dart';
@@ -20,9 +21,11 @@ void main() {
     // Redo is keyboard-only by design — no button on screen.
     expect(find.byIcon(Icons.redo), findsNothing);
 
-    // The picture's name appears once, in the app bar. It used to be repeated
-    // below the canvas with a "(1/9)" counter; both were cut.
-    expect(find.widgetWithText(AppBar, 'Blank'), findsOneWidget);
+    // A friendly invitation in the app bar — not the template's name, which
+    // read "Blank". The name used to also be repeated below the canvas with a
+    // "(1/9)" counter; both were cut.
+    expect(find.widgetWithText(AppBar, kAppTitle), findsOneWidget);
+    expect(find.textContaining('Blank'), findsNothing);
     expect(find.textContaining('1/9'), findsNothing);
   });
 
